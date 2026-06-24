@@ -168,6 +168,48 @@ class AuthService:
         await self._audit("account_access", context, user_id=user.id)
         await self.session.commit()
 
+    async def audit_csrf_failure(
+        self,
+        context: Any,
+        user_id: UUID | None = None,
+        failure_reason: str = "csrf_validation_failed",
+    ) -> None:
+        """Log a CSRF validation failure without recording token values."""
+        await self._audit(
+            "csrf_validation_failure",
+            context,
+            user_id=user_id,
+            metadata={"failure_reason": failure_reason},
+        )
+        await self.session.commit()
+
+    async def audit_permission_denied(
+        self,
+        user: User,
+        context: Any,
+        required_permission: str,
+        endpoint: str,
+    ) -> None:
+        """Log an RBAC permission denial."""
+        await self._audit(
+            "permission_denied",
+            context,
+            user_id=user.id,
+            metadata={
+                "required_permission": required_permission,
+                "endpoint": endpoint,
+            },
+        )
+        await self.session.commit()
+
+    async def get_user_id_for_refresh_token(self, refresh_token: str | None) -> UUID | None:
+        """Resolve a refresh token to a user id using only the stored token hash."""
+        if not refresh_token:
+            return None
+
+        token_record = await self.refresh_tokens.get_by_hash(hash_refresh_token(refresh_token))
+        return token_record.user_id if token_record else None
+
     async def _issue_tokens(self, user: User, context: Any) -> AuthTokens:
         access_token = create_access_token(str(user.id), user.email, user.role)
         refresh_token = generate_opaque_token()

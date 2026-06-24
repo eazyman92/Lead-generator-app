@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -5,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.auth import get_auth_service
+from app.core.dependencies import RequestContext, require_permissions
 from app.core.exceptions import AuthorizationError
 from app.core.permissions import require_role
 from app.core.security import create_access_token
@@ -32,6 +34,33 @@ class CurrentUserService:
         self.account_access_logged = True
 
 
+@dataclass
+class FakeRequestUrl:
+    path: str
+
+
+@dataclass
+class FakeRequest:
+    url: FakeRequestUrl
+
+
+class PermissionAuditService:
+    def __init__(self) -> None:
+        self.permission_denials = []
+
+    async def audit_permission_denied(self, user, context, required_permission, endpoint):
+        self.permission_denials.append(
+            {
+                "event_type": "permission_denied",
+                "user_id": user.id,
+                "request_id": context.request_id,
+                "ip_address": context.ip_address,
+                "required_permission": required_permission,
+                "endpoint": endpoint,
+            }
+        )
+
+
 def test_me_returns_current_user_from_access_token() -> None:
     user = FakeUser(id=uuid4(), email="user@example.com", role="user")
     service = CurrentUserService(user)
@@ -53,3 +82,36 @@ def test_rbac_denies_unapproved_role() -> None:
 
     with pytest.raises(AuthorizationError):
         require_role(user, ["admin"])
+
+
+def test_permission_denial_is_audited() -> None:
+    user = FakeUser(id=uuid4(), email="user@example.com", role="user")
+    request = FakeRequest(url=FakeRequestUrl(path="/api/v1/admin/users"))
+    context = RequestContext(
+        request_id="request-123",
+        ip_address="203.0.113.10",
+        user_agent="pytest",
+    )
+    service = PermissionAuditService()
+    dependency = require_permissions("user:manage")
+
+    with pytest.raises(AuthorizationError):
+        asyncio.run(
+            dependency(
+                request=request,
+                user=user,
+                context=context,
+                service=service,
+            )
+        )
+
+    assert service.permission_denials == [
+        {
+            "event_type": "permission_denied",
+            "user_id": user.id,
+            "request_id": "request-123",
+            "ip_address": "203.0.113.10",
+            "required_permission": "user:manage",
+            "endpoint": "/api/v1/admin/users",
+        }
+    ]

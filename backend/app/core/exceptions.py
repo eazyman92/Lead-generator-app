@@ -33,7 +33,8 @@ class AuthorizationError(AppError):
 class CsrfError(AppError):
     """CSRF validation failed."""
 
-    def __init__(self) -> None:
+    def __init__(self, failure_reason: str = "csrf_validation_failed") -> None:
+        self.failure_reason = failure_reason
         super().__init__(403, "CSRF_VALIDATION_FAILED", "CSRF validation failed.")
 
 

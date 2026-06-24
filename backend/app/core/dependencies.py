@@ -6,7 +6,8 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import parse_access_token
-from app.core.permissions import require_role
+from app.core.exceptions import AuthorizationError, CsrfError
+from app.core.permissions import require_permission, require_role
 from app.core.security import (
     ACCESS_TOKEN_COOKIE,
     CSRF_HEADER_NAME,
@@ -46,7 +47,11 @@ def get_auth_service(session: AsyncSession = Depends(get_session)) -> AuthServic
     return AuthService(session)
 
 
-async def validate_csrf(request: Request) -> None:
+async def validate_csrf(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    service: AuthService = Depends(get_auth_service),
+) -> None:
     """Validate CSRF for state-changing browser requests."""
     if request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return
@@ -54,7 +59,18 @@ async def validate_csrf(request: Request) -> None:
     cookie_token = request.cookies.get(CSRF_TOKEN_COOKIE)
     header_token = request.headers.get(CSRF_HEADER_NAME)
     session_key = request.cookies.get(REFRESH_TOKEN_COOKIE) or "anonymous"
-    validate_csrf_token(cookie_token, header_token, session_key)
+    try:
+        validate_csrf_token(cookie_token, header_token, session_key)
+    except CsrfError as exc:
+        user_id = await service.get_user_id_for_refresh_token(
+            request.cookies.get(REFRESH_TOKEN_COOKIE)
+        )
+        await service.audit_csrf_failure(
+            context,
+            user_id=user_id,
+            failure_reason=exc.failure_reason,
+        )
+        raise
 
 
 async def get_current_user(
@@ -68,8 +84,46 @@ async def get_current_user(
 
 def require_roles(*roles: str) -> Callable[[User], User]:
     """Create a dependency requiring one of the provided roles."""
-    async def dependency(user: User = Depends(get_current_user)) -> User:
-        require_role(user, roles)
+    async def dependency(
+        request: Request,
+        user: User = Depends(get_current_user),
+        context: RequestContext = Depends(get_request_context),
+        service: AuthService = Depends(get_auth_service),
+    ) -> User:
+        try:
+            require_role(user, roles)
+        except AuthorizationError:
+            await service.audit_permission_denied(
+                user,
+                context,
+                required_permission=f"role:{','.join(roles)}",
+                endpoint=request.url.path,
+            )
+            raise
+        return user
+
+    return dependency
+
+
+def require_permissions(*permissions: str) -> Callable[[User], User]:
+    """Create a dependency requiring all provided permissions."""
+    async def dependency(
+        request: Request,
+        user: User = Depends(get_current_user),
+        context: RequestContext = Depends(get_request_context),
+        service: AuthService = Depends(get_auth_service),
+    ) -> User:
+        try:
+            for permission in permissions:
+                require_permission(user, permission)
+        except AuthorizationError:
+            await service.audit_permission_denied(
+                user,
+                context,
+                required_permission=",".join(permissions),
+                endpoint=request.url.path,
+            )
+            raise
         return user
 
     return dependency

@@ -144,18 +144,18 @@ def validate_csrf_token(
 ) -> None:
     """Validate a CSRF cookie/header pair."""
     if not cookie_token or not header_token:
-        raise CsrfError()
+        raise CsrfError("missing_csrf_token")
     if not hmac.compare_digest(cookie_token, header_token):
-        raise CsrfError()
+        raise CsrfError("csrf_token_mismatch")
 
     try:
         nonce, signature = cookie_token.split(".", 1)
     except ValueError as exc:
-        raise CsrfError() from exc
+        raise CsrfError("invalid_csrf_token_format") from exc
 
     expected = _sign_csrf_nonce(nonce, session_key)
     if not hmac.compare_digest(signature, expected):
-        raise CsrfError()
+        raise CsrfError("invalid_csrf_token_signature")
 
 
 def _sign_csrf_nonce(nonce: str, session_key: str) -> str:
