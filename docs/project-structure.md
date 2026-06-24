@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -75,7 +75,7 @@ to understand.
 # 3. Repository Structure
 
 ```text
-lead-intelligence-platform/
+lead-generator-app/
 
 ├── docs/
 │
@@ -118,12 +118,19 @@ docs/
 ├── architecture.md
 ├── api-spec.md
 ├── data-model.md
-├── data-acquisition-strategy.md
+├── data-acquisition-strategy-v1.md
 ├── ui-ux-specification.md
 ├── project-structure.md
 ├── deployment-guide.md
 ├── security-standards.md
-└── coding-standards.md
+├── coding-standards.md
+├── authentication-spec.md
+├── refresh-token-spec.md
+├── csrf-protection-spec.md
+├── api-error-contract.md
+├── job-queue-spec.md
+├── compliance-policy.md
+└── documentation-governance.md
 ```
 
 ---
@@ -179,25 +186,11 @@ Technology:
 backend/
 
 ├── app/
-│
-├── api/
-│
-├── services/
-│
-├── repositories/
-│
-├── models/
-│
-├── schemas/
-│
-├── middleware/
-│
-├── auth/
-│
-├── config/
-│
-├── utils/
-│
+│   ├── api/
+│   ├── services/
+│   ├── repositories/
+│   ├── models/
+│   └── schemas/
 └── tests/
 ```
 
@@ -283,9 +276,17 @@ POSTGRES_USER=
 
 POSTGRES_PASSWORD=
 
-JWT_SECRET=
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES=
 
-JWT_REFRESH_SECRET=
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS=
+
+AUTH_JWT_SECRET_KEY=
+
+AUTH_COOKIE_DOMAIN=
+
+AUTH_COOKIE_SECURE=
+
+AUTH_COOKIE_SAMESITE=
 
 INTERNAL_API_TOKEN=
 
@@ -376,7 +377,7 @@ level
 
 message
 
-correlation_id
+request_id
 ```
 
 ---
@@ -407,7 +408,9 @@ Success:
 ```json
 {
   "success": true,
-  "data": {}
+  "data": {},
+  "message": null,
+  "request_id": "..."
 }
 ```
 
@@ -418,7 +421,11 @@ Error:
 ```json
 {
   "success": false,
-  "error": "message"
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "message"
+  },
+  "request_id": "..."
 }
 ```
 
@@ -499,7 +506,7 @@ Example:
 {
   "crm_module": false,
   "email_export": true,
-  "ai_scoring": true
+  "ai_scoring": false
 }
 ```
 
@@ -632,7 +639,7 @@ kebab-case
 Example:
 
 ```text
-/api/business-search
+/api/v1/business-search
 ```
 
 ---

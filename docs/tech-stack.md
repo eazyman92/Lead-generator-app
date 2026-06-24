@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -94,7 +94,7 @@ FastAPI
 
 ## 4.2 Language
 
-* Python 3.11+
+* Python 3.12+
 
 ---
 
@@ -106,7 +106,7 @@ FastAPI
 
 ## 4.4 Authentication
 
-* JWT (Access + Refresh tokens)
+* JWT access token + opaque refresh token
 
 ---
 
@@ -115,7 +115,7 @@ FastAPI
 * Business search logic
 * API orchestration
 * Authentication & authorization
-* Trigger enrichment jobs
+* Trigger background jobs
 * Serve processed leads
 
 ---
@@ -133,8 +133,9 @@ FastAPI
 * Website crawling
 * Data extraction
 * Contact discovery
-* Decision-maker identification
-* Opportunity scoring
+* Public contact collection
+* Future decision-maker identification
+* Future opportunity scoring
 
 ---
 
@@ -191,8 +192,9 @@ PostgreSQL
 
 * store all businesses
 * store contacts
-* store enrichment data
-* store opportunity scores
+* store public contact data
+* store future enrichment data
+* store future opportunity scores
 * store sources & audit logs
 
 ---
@@ -259,7 +261,7 @@ Docker
 
 ## 9.1 Auth System
 
-* JWT (Access + Refresh tokens)
+* JWT access token + opaque refresh token
 
 ---
 
@@ -377,7 +379,7 @@ No hardcoded values allowed.
 
 ## Backend
 
-* Python 3.11+
+* Python 3.12+
 
 ---
 

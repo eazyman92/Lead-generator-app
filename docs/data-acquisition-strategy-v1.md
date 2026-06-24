@@ -2,18 +2,18 @@
 
 ## Project Name
 
-Lead Intelligence Platform (Working Name = Shark)
+Lead Generator App
 
 ---
 
 # 1. Purpose
 
-This document defines how the platform discovers, collects, enriches, validates, and ranks business and decision-maker data.
+This document defines how the platform discovers, collects, validates, and exports business and public contact data.
 
 It introduces an enhanced focus on:
 
-* Decision Maker Identification
-* Contact Hierarchy Modeling
+* Public Contact Collection
+* Source Traceability
 * Email Sourcing Rules
 * Source Trust Ranking System
 
@@ -22,8 +22,8 @@ It introduces an enhanced focus on:
 # 2. Core Principles
 
 * Data must be sourced from publicly available information only.
-* Decision-makers are higher priority than generic contacts.
-* Enrichment is more valuable than raw collection.
+* Publicly listed business contact information is higher priority than unverified third-party data.
+* Verified contact collection is more valuable than raw collection.
 * Data must be traceable to a source.
 * Multiple sources increase confidence score.
 * Simplicity and reliability over aggressive scraping.
@@ -73,13 +73,13 @@ Locate official company web presence:
 
 ---
 
-## Stage 4: Contact & Decision Maker Extraction
+## Stage 4: Public Contact Extraction
 
 ### 4.1 Contact Hierarchy Model
 
 Contacts are categorized into tiers:
 
-#### Tier 1 — Decision Makers (Highest Priority)
+#### Future Tier 1 — Decision Makers
 
 * CEO
 * Founder
@@ -109,9 +109,9 @@ Contacts are categorized into tiers:
 
 ---
 
-### 4.2 Decision Maker Identification Layer
+### 4.2 Future Decision Maker Identification Layer
 
-The system must attempt to identify decision makers using:
+Future releases may attempt to identify decision makers using:
 
 * Company About pages
 * Team pages
@@ -158,9 +158,9 @@ Collected emails:
 
 ---
 
-## 5.3 Decision Maker Emails
+## 5.3 Future Decision Maker Emails
 
-Decision maker emails are collected only when:
+Future decision maker emails may be collected only when:
 
 * Explicitly published on official websites OR
 * Clearly associated with named contacts on public pages
@@ -259,9 +259,9 @@ Each business is enriched with:
 
 ---
 
-# 8. Opportunity Detection Layer
+# 8. Future Opportunity Detection Layer
 
-The system identifies business needs:
+Future releases may identify business needs:
 
 ## Indicators:
 
@@ -303,16 +303,16 @@ Output:
 
 * Business discovery
 * Website discovery
-* Contact extraction
-* Decision maker identification
+* Public contact extraction
 * Email sourcing (public only)
 * Social profile collection
-* Website enrichment
-* Opportunity scoring
 * CSV export
 
 ## Not Included:
 
+* Decision-maker enrichment
+* Opportunity scoring
+* Advanced intelligence
 * LinkedIn scraping automation
 * Email guessing at scale
 * Paid datasets
@@ -327,7 +327,6 @@ Output:
 Version 1 is successful if:
 
 * Users can find businesses by industry + location
-* Decision makers are correctly identified when available
 * Public emails are accurately extracted
-* Businesses are enriched with useful intelligence
-* Opportunity scoring improves lead quality vs basic directories
+* Business details are traceable to public sources
+* CSV exports include selected business and contact fields

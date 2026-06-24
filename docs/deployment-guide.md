@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -92,7 +92,7 @@ Install:
 ```bash id="clone"
 git clone <repository-url>
 
-cd lead-intelligence-platform
+cd lead-generator-app
 ```
 
 ---
@@ -202,9 +202,19 @@ POSTGRES_USER=
 
 POSTGRES_PASSWORD=
 
-JWT_SECRET=
+POSTGRES_DB=
 
-JWT_REFRESH_SECRET=
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES=
+
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS=
+
+AUTH_JWT_SECRET_KEY=
+
+AUTH_COOKIE_DOMAIN=
+
+AUTH_COOKIE_SECURE=
+
+AUTH_COOKIE_SAMESITE=
 
 INTERNAL_API_TOKEN=
 
@@ -375,6 +385,7 @@ Requirements:
 * secure secrets
 * non-root containers
 * private database access
+* PostgreSQL must not publish a host port
 
 ---
 
@@ -456,6 +467,8 @@ redeploy previous image
 Docker Compose
 
 Single Server
+
+Public deployments must use HTTPS/TLS. Local development may use localhost HTTP only.
 
 ---
 

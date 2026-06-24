@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -21,7 +21,7 @@ Combined into a simple lead intelligence dashboard.
 Primary goals:
 
 * Discover leads quickly
-* Analyze opportunities easily
+* Review business details easily
 * Export leads efficiently
 
 ---
@@ -64,8 +64,6 @@ Lead Search
 
 Results
 
-Opportunity Center
-
 Exports
 
 Settings
@@ -93,7 +91,7 @@ Provide platform overview.
 
 ---
 
-#### Decision Makers Found
+#### Public Contacts Found
 
 ```text
 18,450
@@ -218,8 +216,8 @@ Display discovered businesses.
 
 Columns:
 
-| Business | Website | Phone | Email | City | Score |
-| -------- | ------- | ----- | ----- | ---- | ----- |
+| Business | Website | Phone | Email | City |
+| -------- | ------- | ----- | ----- | ---- |
 
 ---
 
@@ -228,7 +226,7 @@ Columns:
 Per Row:
 
 * View
-* Enrich
+* Refresh
 * Export
 
 ---
@@ -237,7 +235,7 @@ Per Row:
 
 * Select All
 * Export Selected
-* Run Enrichment
+* Refresh Selected
 
 ---
 
@@ -287,12 +285,12 @@ Contact URL
 
 ## Section C
 
-Decision Makers
+Public Contacts
 
 Table:
 
-| Name | Role | Email | Priority |
-| ---- | ---- | ----- | -------- |
+| Name | Role | Email | Source |
+| ---- | ---- | ----- | ------ |
 
 ---
 
@@ -340,7 +338,7 @@ Badges:
 
 ---
 
-# 8. Opportunity Center
+# 8. Future Opportunity Center
 
 Purpose:
 
@@ -360,7 +358,7 @@ City
 
 ---
 
-## Opportunity Table
+## Future Opportunity Table
 
 Columns:
 
@@ -416,10 +414,6 @@ Checkboxes:
 
 ☑ Website
 
-☑ Score
-
----
-
 # 10. Settings Page
 
 ---
@@ -460,7 +454,7 @@ Show:
 Loading Leads...
 ```
 
-while enrichment continues.
+while public contact collection continues.
 
 ---
 
@@ -597,19 +591,19 @@ Lead Detail
 
 ---
 
-### Screen 5
+### Future Screen
 
 Opportunity Center
 
 ---
 
-### Screen 6
+### Screen 5
 
 Export Center
 
 ---
 
-### Screen 7
+### Screen 6
 
 Settings
 
@@ -621,11 +615,9 @@ Users can:
 
 ✓ Search businesses
 
-✓ View enriched business data
+✓ View business details
 
-✓ View decision makers
-
-✓ Identify opportunities
+✓ View public contact information
 
 ✓ Export leads
 

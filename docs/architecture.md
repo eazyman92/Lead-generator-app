@@ -2,14 +2,13 @@
 
 ## 1. Overview
 
-This document defines the high-level architecture of the Lead Intelligence Platform.
+This document defines the high-level architecture of the Lead Generator App.
 
 The system is designed as a modular, containerized SaaS platform that performs:
 
 * Business discovery
-* Data enrichment
-* Decision-maker identification
-* Opportunity scoring
+* Business detail lookup
+* Public contact information collection
 * Lead export
 
 The system is optimized for:
@@ -17,6 +16,8 @@ The system is optimized for:
 * Local-first development (Docker Compose)
 * Low cost operation (no mandatory paid APIs)
 * Future scalability (worker-based architecture)
+
+MVP scope includes business search, business details, contact information from public sources, and CSV export. Future releases may add decision-maker enrichment, scoring, and advanced intelligence.
 
 ---
 
@@ -41,12 +42,12 @@ The system is optimized for:
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
 │ PostgreSQL   │  │ Worker       │  │ External Web │
 │ Database     │  │ Service      │  │ Sources      │
-└──────────────┘  │ (Enrichment) │  └──────────────┘
+└──────────────┘  │ (Jobs)       │  └──────────────┘
                   └──────┬───────┘
                          ▼
                   ┌──────────────┐
+                  │ Future       │
                   │ Scoring      │
-                  │ Engine       │
                   └──────────────┘
 ```
 
@@ -90,8 +91,8 @@ Responsibilities:
 
 * Business search
 * Data retrieval
-* Trigger enrichment jobs
-* Serve scored leads
+* Trigger background jobs
+* Serve processed leads
 * Export CSV data
 
 Security:
@@ -107,9 +108,9 @@ Security:
 Responsibilities:
 
 * Store all business data
-* Store contacts and decision makers
-* Store enrichment results
-* Store opportunity scores
+* Store contacts
+* Store future enrichment results
+* Store future opportunity scores
 * Maintain source traceability
 
 Key Design:
@@ -130,10 +131,10 @@ Technology:
 Responsibilities:
 
 * Website crawling
-* Contact extraction
-* Decision-maker identification
-* Enrichment processing
-* Opportunity scoring
+* Contact extraction from public sources
+* CSV export preparation
+* Future enrichment processing
+* Future opportunity scoring
 
 Execution Model:
 
@@ -166,33 +167,31 @@ Rules:
 
 ```text id="flow-search"
 User → Next.js UI
-     → FastAPI /search endpoint
+     → FastAPI /api/v1/search endpoint
      → PostgreSQL query
-     → Return cached + enriched results
+     → Return cached + collected results
      → UI renders leads
 ```
 
 ---
 
-## 4.2 Enrichment Flow
+## 4.2 Contact Collection Flow
 
 ```text id="flow-enrich"
 API Trigger
    ↓
-Worker Queue
+Database-backed job queue
    ↓
-Website crawling
+Public website crawling
    ↓
-Contact extraction
-   ↓
-Decision-maker identification
+Public contact extraction
    ↓
 Database update
 ```
 
 ---
 
-## 4.3 Scoring Flow
+## 4.3 Future Scoring Flow
 
 ```text id="flow-score"
 Business Data
@@ -212,8 +211,10 @@ Expose via API
 
 ## 5.1 Authentication Layer
 
-* JWT-based authentication
-* Access + refresh tokens
+* JWT access token authentication
+* Opaque refresh tokens
+* HTTP-only secure cookies
+* CSRF protection for state-changing browser requests
 * Expiring sessions
 
 ---
@@ -281,13 +282,13 @@ services:
       - postgres
 
   postgres:
-    image: postgres:15
+    image: postgres:15.5
     environment:
-      POSTGRES_DB: leads
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: securepassword
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    expose:
+      - "5432"
 ```
 
 ---
@@ -308,9 +309,9 @@ Each component is independent:
 
 Heavy tasks are handled via worker service:
 
-* enrichment
+* public contact collection
 * crawling
-* scoring
+* future scoring
 
 ---
 
@@ -344,7 +345,7 @@ Future upgrades:
 
 * Indexed queries for (country, city, industry)
 * Cached search results
-* Batch enrichment processing
+* Batch public contact collection
 * Pagination for all API responses
 
 ---
@@ -354,7 +355,7 @@ Future upgrades:
 * Worker retries on failure
 * Dead-letter job handling (future)
 * Graceful API degradation
-* Partial enrichment fallback allowed
+* Partial contact collection fallback allowed
 
 ---
 
@@ -375,6 +376,6 @@ This architecture provides:
 * A fully working lead intelligence system
 * Modular and scalable design
 * Secure API-first backend
-* Worker-based enrichment pipeline
+* Worker-based background processing pipeline
 * Low-cost local development setup
 * Future SaaS expansion path

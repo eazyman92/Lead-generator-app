@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -100,6 +100,9 @@ Secure user system.
 ## Backend
 
 * JWT authentication
+* HTTP-only secure cookies
+* Opaque refresh token storage
+* CSRF protection
 * User model
 * Password hashing (Argon2id)
 * Login/register endpoints
@@ -137,8 +140,9 @@ Create system data foundation.
 * Users
 * Businesses
 * Contacts
-* Search Logs
+* Search Logs (`search_logs`)
 * Exports
+* Refresh Tokens
 
 ---
 
@@ -255,7 +259,7 @@ Identify high-value contacts.
 ## Features
 
 * role detection (CEO, founder, manager)
-* LinkedIn-based enrichment (where publicly available)
+* public profile-based enrichment where permitted
 * hierarchy scoring system
 
 ---
@@ -443,7 +447,7 @@ System is successful when:
 
 ✓ Users can search businesses
 ✓ Leads are returned accurately
-✓ Data is enriched
+✓ Public contact information is available where found
 ✓ Leads can be exported
 ✓ System is stable under load
 ✓ No critical security issues

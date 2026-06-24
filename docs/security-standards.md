@@ -2,7 +2,7 @@
 
 ## Project
 
-Lead Intelligence Platform
+Lead Generator App
 
 ---
 
@@ -70,8 +70,10 @@ Security must exist at multiple layers:
 
 Required:
 
-* JWT Access Tokens
-* Refresh Tokens
+* JWT access tokens
+* Opaque refresh tokens
+* HTTP-only secure cookies
+* CSRF protection
 
 ---
 
@@ -81,12 +83,24 @@ Required:
 15 minutes
 ```
 
+Configurable using:
+
+```text
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES
+```
+
 ---
 
 ## Refresh Token Lifetime
 
 ```text id="ww8r23"
-7 days
+30 days
+```
+
+Configurable using:
+
+```text
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS
 ```
 
 ---
@@ -95,11 +109,18 @@ Required:
 
 Frontend:
 
-* Secure HTTP-only cookies preferred
+* HTTP-only secure cookies required
+* HttpOnly=true
+* SameSite=Lax by default
+* Secure=true in production
 
 Never:
 
 * localStorage for sensitive tokens
+* sessionStorage for sensitive tokens
+* browser-accessible JavaScript variables for sensitive tokens
+
+Tokens must never be returned in JSON response bodies.
 
 ---
 
@@ -181,6 +202,10 @@ before execution.
 
 All traffic encrypted.
 
+Exception:
+
+Localhost development may use HTTP only for local testing. Staging, production, and any non-local deployment must use HTTPS.
+
 ---
 
 ## TLS Version
@@ -205,6 +230,12 @@ Required:
 
 ```text id="l4i1el"
 /api/v1/
+```
+
+Internal APIs must use:
+
+```text
+/internal/v1/
 ```
 
 ---
@@ -367,7 +398,17 @@ Example:
 ```text id="6f60wp"
 DATABASE_URL
 
-JWT_SECRET
+AUTH_JWT_SECRET_KEY
+
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES
+
+AUTH_REFRESH_TOKEN_EXPIRE_DAYS
+
+AUTH_COOKIE_SECURE
+
+AUTH_COOKIE_SAMESITE
+
+AUTH_COOKIE_DOMAIN
 
 POSTGRES_PASSWORD
 ```
@@ -438,6 +479,12 @@ permission denied
 token refresh
 
 account changes
+
+logout
+
+logout-all
+
+token reuse attempt
 ```
 
 ---
@@ -471,7 +518,7 @@ Workers must:
 Worker endpoints:
 
 ```text id="2v2p7x"
-/internal/*
+/internal/v1/*
 ```
 
 must never be public.

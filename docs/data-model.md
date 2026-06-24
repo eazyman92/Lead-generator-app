@@ -2,20 +2,65 @@
 
 ## 1. Overview
 
-This document defines the core database schema for the Lead Intelligence Platform.
+This document defines the core database schema for the Lead Generator App.
 
 The system is designed around four core ideas:
 
 * Businesses are the central entity
 * Contacts belong to businesses
-* Enrichment adds intelligence to businesses
+* Public contact collection adds contact information to businesses
 * Sources provide traceability and trust
 
 ---
 
 # 2. Core Entities
 
-## 2.1 Businesses Table
+## 2.1 Users Table
+
+Stores authenticated application users.
+
+```sql
+users
+```
+
+### Fields
+
+* id (UUID, PK)
+* email (TEXT, unique)
+* password_hash (TEXT)
+* role (TEXT) — admin, user, system_worker
+* is_active (BOOLEAN)
+* created_at (TIMESTAMP)
+* updated_at (TIMESTAMP)
+
+---
+
+## 2.2 Refresh Tokens Table
+
+Stores hashed opaque refresh tokens for session lifecycle management.
+
+```sql
+refresh_tokens
+```
+
+### Fields
+
+* id (UUID, PK)
+* user_id (FK -> users.id)
+* token_hash (TEXT)
+* issued_at (TIMESTAMP)
+* expires_at (TIMESTAMP)
+* revoked_at (TIMESTAMP, nullable)
+* replaced_by_token_id (UUID, nullable)
+* created_ip (VARCHAR)
+* user_agent (TEXT)
+* last_used_at (TIMESTAMP)
+
+Raw refresh tokens must never be stored.
+
+---
+
+## 2.3 Businesses Table
 
 Central entity of the system.
 
@@ -42,9 +87,9 @@ businesses
 
 ---
 
-## 2.2 Contacts Table
+## 2.4 Contacts Table
 
-Stores people associated with a business.
+Stores public contact information associated with a business.
 
 ```sql
 contacts
@@ -55,7 +100,7 @@ contacts
 * id (UUID, PK)
 * business_id (FK → businesses.id)
 * full_name (TEXT)
-* role (TEXT) — CEO, Founder, Manager, etc.
+* role (TEXT, nullable)
 * email (TEXT, nullable)
 * phone (TEXT, nullable)
 * linkedin_url (TEXT, nullable)
@@ -66,7 +111,7 @@ contacts
 
 ---
 
-## 2.3 Decision Makers View (Logical Layer)
+## 2.5 Future Decision Makers View (Logical Layer)
 
 Not necessarily a separate table — derived from `contacts`.
 
@@ -78,7 +123,7 @@ Definition:
 
 ---
 
-## 2.4 Business Enrichment Table
+## 2.6 Future Business Enrichment Table
 
 Stores AI + scraping intelligence.
 
@@ -124,7 +169,7 @@ business_enrichment
 
 ---
 
-## 2.5 Opportunity Scores Table
+## 2.7 Future Opportunity Scores Table
 
 Stores AI-generated lead value scoring.
 
@@ -154,7 +199,7 @@ opportunity_scores
 
 ---
 
-## 2.6 Data Sources Table
+## 2.8 Data Sources Table
 
 Tracks where each piece of data came from.
 
@@ -190,7 +235,7 @@ data_sources
 
 ---
 
-## 2.7 Social Profiles Table
+## 2.9 Social Profiles Table
 
 Stores social media links separately for normalization.
 
@@ -207,12 +252,12 @@ social_profiles
 
 ---
 
-## 2.8 Search Queries Table
+## 2.10 Search Logs Table
 
 Tracks user searches for analytics and caching.
 
 ```sql
-search_queries
+search_logs
 ```
 
 ### Fields
@@ -233,16 +278,87 @@ search_queries
 
 ---
 
+## 2.11 Exports Table
+
+Tracks CSV export requests and generated files.
+
+```sql
+exports
+```
+
+### Fields
+
+* id (UUID, PK)
+* user_id (FK → users.id)
+* format (TEXT) — csv
+* filters (JSONB)
+* status (TEXT) — pending, processing, completed, failed
+* file_path (TEXT, nullable)
+* created_at (TIMESTAMP)
+* updated_at (TIMESTAMP)
+
+---
+
+## 2.12 Background Jobs Table
+
+Supports the V1 database-backed polling worker system.
+
+```sql
+background_jobs
+```
+
+### Fields
+
+* id (UUID, PK)
+* job_type (TEXT)
+* status (TEXT) — pending, running, completed, failed
+* payload (JSONB)
+* attempts (INTEGER)
+* max_attempts (INTEGER)
+* locked_at (TIMESTAMP, nullable)
+* locked_by (TEXT, nullable)
+* error_message (TEXT, nullable)
+* created_at (TIMESTAMP)
+* updated_at (TIMESTAMP)
+
+---
+
+## 2.13 Audit Logs Table
+
+Tracks security and user activity events.
+
+```sql
+audit_logs
+```
+
+### Fields
+
+* id (UUID, PK)
+* user_id (FK → users.id, nullable)
+* event_type (TEXT)
+* ip_address (TEXT, nullable)
+* request_id (TEXT)
+* metadata (JSONB)
+* created_at (TIMESTAMP)
+
+---
+
 # 3. Relationships
 
 ```
 businesses
    │
    ├── contacts
-   ├── business_enrichment
-   ├── opportunity_scores
+   ├── business_enrichment (future)
+   ├── opportunity_scores (future)
    ├── data_sources
    └── social_profiles
+
+users
+   │
+   ├── refresh_tokens
+   ├── exports
+   └── audit_logs
 ```
 
 ---
@@ -258,8 +374,8 @@ Everything revolves around a business entity.
 ## 4.2 Separation of Concerns
 
 * Contacts ≠ Businesses
-* Enrichment ≠ Core Data
-* Scores ≠ Raw Data
+* Future enrichment ≠ Core Data
+* Future scores ≠ Raw Data
 * Sources ≠ Business Entity
 
 ---
@@ -311,9 +427,27 @@ They are derived from:
 * (role)
 * (is_decision_maker)
 
+## refresh_tokens
+
+* (user_id)
+* (token_hash)
+* (expires_at)
+* (revoked_at)
+
 ## opportunity_scores
 
 * (total_score)
+
+## background_jobs
+
+* (status)
+* (job_type)
+* (locked_at)
+
+## exports
+
+* (user_id)
+* (status)
 
 ---
 
@@ -321,8 +455,8 @@ They are derived from:
 
 * A business cannot exist without at least one source entry
 * Contacts must belong to a business
-* Enrichment must be tied to a business
-* Scores must always be derived, not manually entered
+* Future enrichment must be tied to a business
+* Future scores must always be derived, not manually entered
 * Duplicate businesses must be merged based on:
 
   * website OR
@@ -350,11 +484,9 @@ This database supports:
 
 * Business discovery
 * Contact extraction
-* Decision-maker identification
-* Website enrichment
-* AI opportunity scoring
-* Source validation
+* Public contact collection
 * CSV export
+* Source validation
 
 It is optimized for:
 

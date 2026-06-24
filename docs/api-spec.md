@@ -2,25 +2,38 @@
 
 ## 1. Overview
 
-This document defines secure API endpoints for the Lead Intelligence Platform.
+This document defines secure API endpoints for the Lead Generator App.
 
-All endpoints are:
+All public API endpoints are:
 
 * HTTPS only
 * Authenticated via JWT
 * Rate limited
 * Logged for audit purposes
 
+Authentication bootstrap endpoints are public but still rate limited, validated, and logged.
+
 ---
 
 # 2. Authentication
 
-## 2.1 Login
+Authentication uses HTTP-only secure cookies:
+
+* Access Token: JWT
+* Refresh Token: opaque token
+* Cookie settings: `HttpOnly=true`, `SameSite=Lax` by default, `Secure=true` in production
+* CSRF protection required for state-changing requests
+
+Tokens must never be returned in JSON response bodies and must never be stored in `localStorage`, `sessionStorage`, or browser-accessible JavaScript variables.
+
+---
+
+## 2.1 Register
 
 ### Endpoint
 
 ```
-POST /auth/login
+POST /api/v1/auth/register
 ```
 
 ### Request
@@ -28,7 +41,7 @@ POST /auth/login
 ```json
 {
   "email": "user@example.com",
-  "password": "securepassword"
+  "password": "<user-provided-password>"
 }
 ```
 
@@ -36,34 +49,171 @@ POST /auth/login
 
 ```json
 {
-  "access_token": "jwt_token_here",
-  "refresh_token": "refresh_token_here"
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "role": "user"
+    }
+  },
+  "message": null,
+  "request_id": "..."
 }
 ```
 
 ---
 
-## 2.2 Refresh Token
+## 2.2 Login
 
 ```
-POST /auth/refresh
+POST /api/v1/auth/login
 ```
 
-Returns new access token.
+Sets access and refresh cookies on successful authentication.
+
+### Request
+
+```json
+{
+  "email": "user@example.com",
+  "password": "<user-provided-password>"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "role": "user"
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
 
 ---
 
-## 2.3 Logout
+## 2.3 Refresh Token
 
 ```
-POST /auth/logout
+POST /api/v1/auth/refresh
 ```
 
-Invalidates refresh token.
+Rotates the refresh token and sets new access and refresh cookies.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "request_id": "..."
+}
+```
 
 ---
 
-# 3. Security Middleware (Applied to ALL endpoints)
+## 2.4 Logout
+
+```
+POST /api/v1/auth/logout
+```
+
+Invalidates the current refresh token and clears authentication cookies.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "request_id": "..."
+}
+```
+
+---
+
+## 2.5 Logout All Devices
+
+```
+POST /api/v1/auth/logout-all
+```
+
+Invalidates all active refresh tokens for the current user and clears authentication cookies.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "request_id": "..."
+}
+```
+
+---
+
+## 2.6 Current User
+
+```
+GET /api/v1/auth/me
+```
+
+Returns the authenticated user profile.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "role": "user"
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
+
+---
+
+## 2.7 CSRF Token
+
+```
+GET /api/v1/auth/csrf
+```
+
+Sets or refreshes the CSRF cookie used by the frontend for state-changing requests.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "request_id": "..."
+}
+```
+
+---
+
+# 3. Security Middleware
+
+Applied to all protected endpoints:
 
 Every request must pass:
 
@@ -72,6 +222,14 @@ Every request must pass:
 * Role validation
 * Request logging
 * Input sanitization
+* CSRF validation for state-changing browser requests
+
+Authentication bootstrap endpoints must pass:
+
+* Rate limit check
+* Request logging
+* Input sanitization
+* CSRF validation where cookies are accepted
 
 ---
 
@@ -80,7 +238,7 @@ Every request must pass:
 ## 4.1 Search Businesses
 
 ```
-POST /api/search
+POST /api/v1/search
 ```
 
 ### Auth Required: YES
@@ -100,16 +258,20 @@ POST /api/search
 
 ```json
 {
-  "results": [
-    {
-      "business_id": "uuid",
-      "name": "ABC Fitness",
-      "website": "https://abcfitness.com",
-      "phone": "+123456789",
-      "city": "Houston",
-      "opportunity_score": 85
-    }
-  ]
+  "success": true,
+  "data": {
+    "results": [
+      {
+        "business_id": "uuid",
+        "name": "ABC Fitness",
+        "website": "https://abcfitness.com",
+        "phone": "+123456789",
+        "city": "Houston"
+      }
+    ]
+  },
+  "message": null,
+  "request_id": "..."
 }
 ```
 
@@ -120,7 +282,7 @@ POST /api/search
 ## 5.1 Get Business
 
 ```
-GET /api/business/{id}
+GET /api/v1/businesses/{id}
 ```
 
 ### Auth Required: YES
@@ -129,18 +291,88 @@ Returns:
 
 * business info
 * contacts
-* enrichment
-* opportunity score
 * social profiles
 
 ---
 
-# 6. Enrichment API
+# 6. Contact API
 
-## 6.1 Trigger Enrichment
+## 6.1 Get Contacts
 
 ```
-POST /api/enrich/{business_id}
+GET /api/v1/businesses/{id}/contacts
+```
+
+Returns:
+
+* public contacts
+* roles
+* emails if publicly available
+* source URLs
+
+---
+
+# 7. Export API
+
+## 7.1 Export Leads
+
+```
+POST /api/v1/exports
+```
+
+### Auth Required: YES
+
+### Request
+
+```json
+{
+  "format": "csv",
+  "filters": {
+    "industry": "gym",
+    "country": "UK"
+  }
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "download_url": "<signed-download-url>"
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
+
+---
+
+# 8. Data Source Tracking API
+
+## 8.1 View Sources
+
+```
+GET /api/v1/businesses/{id}/sources
+```
+
+Returns:
+
+* where data came from
+* trust tier
+* confidence score
+
+---
+
+# 9. Future APIs
+
+Future APIs are not part of the V1 MVP implementation.
+
+## 9.1 Trigger Enrichment
+
+```
+POST /api/future/enrichment/{business_id}
 ```
 
 ### Auth Required: ADMIN / SYSTEM
@@ -154,12 +386,10 @@ Triggers:
 
 ---
 
-# 7. Opportunity Scoring API
-
-## 7.1 Generate Score
+## 9.2 Generate Score
 
 ```
-POST /api/score/{business_id}
+POST /api/future/scores/{business_id}
 ```
 
 ### Auth Required: SYSTEM
@@ -168,103 +398,36 @@ Returns:
 
 ```json
 {
-  "score": 92,
-  "factors": {
-    "no_chatbot": 20,
-    "no_booking": 15,
-    "high_reviews": 10
-  }
+  "success": true,
+  "data": {
+    "score": 92,
+    "factors": {
+      "no_chatbot": 20,
+      "no_booking": 15,
+      "high_reviews": 10
+    }
+  },
+  "message": null,
+  "request_id": "..."
 }
 ```
 
 ---
 
-# 8. Export API
-
-## 8.1 Export Leads
-
-```
-POST /api/export
-```
-
-### Auth Required: YES
-
-### Request
-
-```json
-{
-  "format": "csv",
-  "filters": {
-    "industry": "gym",
-    "country": "UK",
-    "min_score": 80
-  }
-}
-```
-
-### Response
-
-```json
-{
-  "download_url": "signed_url_here"
-}
-```
-
----
-
-# 9. Contact API
-
-## 9.1 Get Contacts
-
-```
-GET /api/business/{id}/contacts
-```
-
-Returns:
-
-* decision makers
-* roles
-* emails (if available)
-* source URLs
-
----
-
-# 10. Data Source Tracking API
-
-## 10.1 View Sources
-
-```
-GET /api/business/{id}/sources
-```
-
-Returns:
-
-* where data came from
-* trust tier
-* confidence score
-
----
-
-# 11. Internal System APIs (Locked Down)
+# 10. Internal System APIs (Locked Down)
 
 These endpoints are NOT public.
 
-## 11.1 Crawl Worker
+## 10.1 Contact Collection Worker
 
 ```
-POST /internal/crawl
+POST /internal/v1/contact-collection
 ```
 
-## 11.2 Enrichment Worker
+## 10.2 CSV Export Worker
 
 ```
-POST /internal/enrich
-```
-
-## 11.3 Scoring Worker
-
-```
-POST /internal/score
+POST /internal/v1/csv-export
 ```
 
 ---
@@ -295,6 +458,7 @@ Every request logs:
 * timestamp
 * IP address
 * response status
+* request_id
 
 ---
 
@@ -325,7 +489,7 @@ Every request logs:
 
 # 14. API Design Principles
 
-* No endpoint without authentication
+* No protected endpoint without authentication
 * No unbounded queries
 * No raw scraping exposure
 * No public access to internal pipelines
@@ -333,7 +497,24 @@ Every request logs:
 
 ---
 
-# 15. V1 Security Summary
+# 15. Error Response Format
+
+All errors must use:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Description"
+  },
+  "request_id": "..."
+}
+```
+
+---
+
+# 16. V1 Security Summary
 
 This API is designed to:
 
@@ -341,12 +522,12 @@ This API is designed to:
 * protect data integrity
 * ensure traceability
 * limit scraping attacks
-* enforce controlled enrichment
+* enforce controlled future enrichment
 * support future scaling
 
 ---
 
-# 16. Future Enhancements (NOT V1)
+# 17. Future Enhancements (NOT V1)
 
 * API gateway (Kong / AWS API Gateway)
 * OAuth2 login (Google / GitHub)
