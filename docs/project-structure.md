@@ -187,6 +187,7 @@ backend/
 
 ├── app/
 │   ├── api/
+│   ├── core/
 │   ├── services/
 │   ├── repositories/
 │   ├── models/
