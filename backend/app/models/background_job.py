@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, Text
+from sqlalchemy import CheckConstraint, DateTime, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -13,7 +13,10 @@ from app.models.mixins import TimestampMixin
 class BackgroundJob(TimestampMixin, Base):
     __tablename__ = "background_jobs"
     __table_args__ = (
-        CheckConstraint("status IN ('pending', 'running', 'completed', 'failed')", name="status_allowed"),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed')",
+            name="status_allowed",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -22,7 +25,19 @@ class BackgroundJob(TimestampMixin, Base):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
     locked_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+
+Index(
+    "ux_background_jobs_active_idempotency",
+    BackgroundJob.job_type,
+    text("(payload->>'idempotency_key')"),
+    unique=True,
+    postgresql_where=text("status IN ('pending', 'running')"),
+)

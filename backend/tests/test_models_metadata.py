@@ -1,3 +1,5 @@
+from sqlalchemy import UniqueConstraint
+
 from app.models import Base
 
 
@@ -67,14 +69,46 @@ def test_required_indexes_are_present() -> None:
     assert "ix_businesses_industry" in indexes_by_table["businesses"]
     assert "ix_businesses_name" in indexes_by_table["businesses"]
     assert "ix_contacts_business_id" in indexes_by_table["contacts"]
+    assert "ix_contacts_source_id" in indexes_by_table["contacts"]
+    assert "ix_contacts_collection_timestamp" in indexes_by_table["contacts"]
     assert "ix_contacts_role" in indexes_by_table["contacts"]
     assert "ix_contacts_is_decision_maker" in indexes_by_table["contacts"]
+    assert "ux_contacts_business_source_email" in indexes_by_table["contacts"]
+    assert "ux_contacts_business_source_phone" in indexes_by_table["contacts"]
+    assert "ux_contacts_business_source_name_url" in indexes_by_table["contacts"]
     assert "ix_refresh_tokens_user_id" in indexes_by_table["refresh_tokens"]
     assert "ix_refresh_tokens_token_hash" in indexes_by_table["refresh_tokens"]
     assert "ix_background_jobs_status" in indexes_by_table["background_jobs"]
     assert "ix_background_jobs_job_type" in indexes_by_table["background_jobs"]
     assert "ix_background_jobs_locked_at" in indexes_by_table["background_jobs"]
+    assert "ux_background_jobs_active_idempotency" in indexes_by_table["background_jobs"]
     assert "ix_exports_user_id" in indexes_by_table["exports"]
     assert "ix_exports_status" in indexes_by_table["exports"]
     assert "ix_search_logs_user_id" in indexes_by_table["search_logs"]
     assert "ix_search_logs_request_id" in indexes_by_table["search_logs"]
+
+
+def test_phase_4a_contact_traceability_metadata_is_registered() -> None:
+    contacts = Base.metadata.tables["contacts"]
+
+    assert "source_id" in contacts.columns
+    assert "collection_timestamp" in contacts.columns
+    assert contacts.c.source_id.nullable is False
+    assert contacts.c.collection_timestamp.nullable is False
+
+    foreign_keys = {
+        fk.constraint.name
+        for fk in contacts.foreign_keys
+    }
+    assert "fk_contacts_source_id_data_sources" in foreign_keys
+
+
+def test_phase_4a_uniqueness_constraints_are_registered() -> None:
+    data_sources = Base.metadata.tables["data_sources"]
+
+    unique_constraints = {
+        constraint.name
+        for constraint in data_sources.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert "uq_data_sources_business_source_url" in unique_constraints

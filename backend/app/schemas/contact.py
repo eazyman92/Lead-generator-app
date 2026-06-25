@@ -8,8 +8,10 @@ from app.schemas.common import OrmModel
 
 class ContactCreate(BaseModel):
     business_id: UUID
+    source_id: UUID
     full_name: str
     source_url: str
+    collection_timestamp: datetime
     role: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -21,6 +23,7 @@ class ContactCreate(BaseModel):
 class ContactRead(OrmModel):
     id: UUID
     business_id: UUID
+    source_id: UUID
     full_name: str
     role: str | None
     email: str | None
@@ -29,5 +32,5 @@ class ContactRead(OrmModel):
     is_decision_maker: bool
     priority_score: int
     source_url: str
+    collection_timestamp: datetime
     created_at: datetime
-

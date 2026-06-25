@@ -34,3 +34,15 @@ class DataSourceRepository(BaseRepository[DataSource]):
             DataSource.business_id == business_id
         )
         return int(await self.session.scalar(statement) or 0)
+
+    async def get_by_business_and_url(
+        self,
+        business_id: UUID,
+        source_url: str,
+    ) -> DataSource | None:
+        """Return a data source by the Phase 4A unique source identity."""
+        statement = select(DataSource).where(
+            DataSource.business_id == business_id,
+            DataSource.source_url == source_url,
+        )
+        return await self.session.scalar(statement)

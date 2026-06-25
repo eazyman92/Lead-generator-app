@@ -32,3 +32,20 @@ class ContactRepository(BaseRepository[Contact]):
         """Return contact count for a business."""
         statement = select(func.count()).select_from(Contact).where(Contact.business_id == business_id)
         return int(await self.session.scalar(statement) or 0)
+
+    async def list_by_source_id(
+        self,
+        source_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Contact]:
+        """Return contacts traced to one data source."""
+        statement = (
+            select(Contact)
+            .where(Contact.source_id == source_id)
+            .order_by(Contact.collection_timestamp.desc(), Contact.id.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.session.scalars(statement)
+        return list(result.all())

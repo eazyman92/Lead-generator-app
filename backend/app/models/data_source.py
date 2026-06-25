@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,7 @@ class DataSource(Base):
         ),
         CheckConstraint("trust_tier IN ('A', 'B', 'C', 'D')", name="trust_tier_allowed"),
         CheckConstraint("confidence_score >= 0 AND confidence_score <= 100", name="confidence_score_range"),
+        UniqueConstraint("business_id", "source_url", name="uq_data_sources_business_source_url"),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -33,4 +34,4 @@ class DataSource(Base):
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     business = relationship("Business", back_populates="data_sources")
-
+    contacts = relationship("Contact", back_populates="source")

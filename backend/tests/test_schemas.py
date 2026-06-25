@@ -25,11 +25,15 @@ def test_refresh_token_create_schema_has_no_raw_token_field() -> None:
 
 
 def test_contact_priority_score_is_bounded() -> None:
+    now = datetime.now(timezone.utc)
+
     with pytest.raises(ValueError):
         ContactCreate(
             business_id=uuid4(),
+            source_id=uuid4(),
             full_name="Test Contact",
             source_url="https://example.com",
+            collection_timestamp=now,
             priority_score=101,
         )
 

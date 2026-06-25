@@ -115,6 +115,7 @@ class BusinessApiService:
         self.contacts_called = True
         contact = SimpleNamespace(
             id=uuid4(),
+            source_id=uuid4(),
             full_name="Public Contact",
             role="Support",
             email="support@abc.example",
@@ -123,6 +124,7 @@ class BusinessApiService:
             is_decision_maker=False,
             priority_score=0,
             source_url="https://abc.example/contact",
+            collection_timestamp=datetime.now(timezone.utc),
             created_at=datetime.now(timezone.utc),
         )
         return BusinessContactsResult(

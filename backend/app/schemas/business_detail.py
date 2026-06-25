@@ -9,6 +9,7 @@ from app.schemas.search import PaginationResponse
 
 class BusinessDetailContact(OrmModel):
     id: UUID
+    source_id: UUID
     full_name: str
     role: str | None
     email: str | None
@@ -17,6 +18,7 @@ class BusinessDetailContact(OrmModel):
     is_decision_maker: bool
     priority_score: int
     source_url: str
+    collection_timestamp: datetime
     created_at: datetime
 
 
