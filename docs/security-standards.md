@@ -459,6 +459,14 @@ Examples:
 * user emails
 * API credentials
 
+Phase 4 contact collection ownership:
+
+* Contact email and phone encryption is owned by the repository persistence boundary.
+* Contact collection services must normalize values before persistence.
+* Repositories must encrypt contact email and phone before insert/update and decrypt only for authorized API/service responses.
+* `ENCRYPTION_KEY` is required for contact-field encryption.
+* Raw contact values must not be stored in job payloads, logs, audit metadata, or error messages.
+
 ---
 
 # 14. Audit Logging Standards

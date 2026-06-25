@@ -129,6 +129,11 @@ docs/
 ├── csrf-protection-spec.md
 ├── api-error-contract.md
 ├── job-queue-spec.md
+├── job-queue-design.md
+├── background-job-spec.md
+├── internal-api-contracts.md
+├── contact-collection-design.md
+├── dead-letter-strategy.md
 ├── compliance-policy.md
 └── documentation-governance.md
 ```
@@ -206,9 +211,7 @@ worker/
 │
 ├── crawlers/
 │
-├── enrichers/
-│
-├── scoring/
+├── collectors/
 │
 ├── schedulers/
 │
@@ -251,7 +254,6 @@ config/
 ├── countries.json
 ├── states.json
 ├── industries.json
-├── scoring-rules.json
 ├── feature-flags.json
 └── ui-settings.json
 ```
@@ -292,6 +294,30 @@ AUTH_COOKIE_SAMESITE=
 INTERNAL_API_TOKEN=
 
 ENCRYPTION_KEY=
+
+WORKER_ID=
+
+WORKER_POLL_INTERVAL_SECONDS=
+
+WORKER_CONCURRENCY=
+
+WORKER_JOB_LOCK_TIMEOUT_SECONDS=
+
+WORKER_JOB_TIMEOUT_SECONDS=
+
+WORKER_DEFAULT_MAX_ATTEMPTS=
+
+WORKER_RETRY_BASE_DELAY_SECONDS=
+
+WORKER_RETRY_MAX_DELAY_SECONDS=
+
+WORKER_HTTP_TIMEOUT_SECONDS=
+
+WORKER_USER_AGENT=
+
+WORKER_ROBOTS_TXT_ENFORCEMENT=
+
+WORKER_DOMAIN_RATE_LIMIT_PER_MINUTE=
 ```
 
 ---
@@ -507,7 +533,7 @@ Example:
 {
   "crm_module": false,
   "email_export": true,
-  "ai_scoring": false
+  "contact_collection": true
 }
 ```
 

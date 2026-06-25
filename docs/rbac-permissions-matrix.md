@@ -14,6 +14,7 @@ This document defines V1 role-based access control permissions for public APIs u
 | --- | --- |
 | `admin` | Administrative user with access to user-facing APIs, audit review, and controlled operational endpoints. |
 | `user` | Standard authenticated user with access to MVP search, business detail, contact, source, and CSV export workflows. |
+| `system_worker` | Internal worker identity resolved from a valid `INTERNAL_API_TOKEN`; not a browser user role. |
 
 ## Permission Naming
 
@@ -78,17 +79,27 @@ internal:contact_collection
 
 Internal endpoints must not be publicly exposed. They must be reachable only through approved backend or worker network paths and must require internal authentication in addition to RBAC permission checks.
 
+Canonical internal security model:
+
+* Authentication: `INTERNAL_API_TOKEN` in `X-Internal-API-Token`
+* Identity: successful validation resolves to `system_worker`
+* Authorization: worker-specific RBAC permissions
+
 | Endpoint | Method | Required Role | Required Permission | Access Rationale |
 | --- | --- | --- | --- | --- |
-| `/internal/v1/contact-collection` | `POST` | `admin` | `internal:contact_collection` | Restricts contact collection worker execution to controlled operational access only. |
-| `/internal/v1/csv-export` | `POST` | `admin` | `internal:csv_export` | Restricts CSV export worker execution to controlled operational access only. |
+| `/internal/v1/contact-collection` | `POST` | `system_worker` | `internal:contact_collection` | Restricts contact collection worker execution to controlled internal access only. |
+| `/internal/v1/csv-export` | `POST` | `system_worker` | `internal:csv_export` | Restricts CSV export worker execution to controlled internal access only. |
+| `/internal/v1/jobs/{job_id}` | `GET` | `system_worker` | `internal:job_read` | Allows workers and controlled backend internals to inspect background job status without exposing job state publicly. |
+| `/internal/v1/jobs/{job_id}/retry` | `POST` | `system_worker` | `internal:job_retry` | Restricts retry creation to authorized internal workflows after failure or dead-letter review. |
+| `/internal/v1/jobs/{job_id}/cancel` | `POST` | `system_worker` | `internal:job_cancel` | Restricts cancellation of pending or running jobs to authorized internal workflows. |
 
 ## Role Permission Summary
 
 | Role | V1 Permissions |
 | --- | --- |
 | `user` | `auth:refresh`, `auth:logout`, `auth:logout_all`, `auth:me`, `search:create`, `search:history`, `business:read`, `contact:read`, `source:read`, `export:create` |
-| `admin` | All `user` permissions plus `audit:read`, `internal:contact_collection`, `internal:csv_export` |
+| `admin` | All `user` permissions plus `audit:read` |
+| `system_worker` | `internal:contact_collection`, `internal:csv_export`, `internal:job_read`, `internal:job_retry`, `internal:job_cancel` |
 
 ## Enforcement Rules
 
@@ -99,14 +110,14 @@ Internal endpoints must not be publicly exposed. They must be reachable only thr
 * Internal endpoints must never be publicly exposed.
 * Standard users must not access audit logs or internal worker endpoints.
 
-## Future Scope
+## MVP Exclusions
 
-Future permissions are not part of the V1 MVP permission set.
+The V1 MVP permission set does not include permissions for:
 
-| Future Area | Example Endpoint | Method | Future Required Role | Future Permission | Access Rationale |
-| --- | --- | --- | --- | --- | --- |
-| Decision-maker enrichment | `/api/future/enrichment/{business_id}` | `POST` | Future admin or internal service role | `enrichment:create` | Reserved for post-MVP contact and decision-maker enrichment workflows. |
-| Opportunity scoring | `/api/future/scores/{business_id}` | `POST` | Future admin or internal service role | `score:create` | Reserved for post-MVP scoring and prioritization workflows. |
-| Advanced intelligence | `/api/future/intelligence/{business_id}` | `GET` | Future admin or internal service role | `intelligence:read` | Reserved for post-MVP advanced business intelligence features. |
-| User administration | `/api/v1/users` | `GET` | Future admin role | `user:read` | Reserved for future administrative user management APIs. |
-| User administration | `/api/v1/users/{id}` | `PATCH` | Future admin role | `user:manage` | Reserved for future administrative account management APIs. |
+* decision-maker identification
+* opportunity scoring
+* AI enrichment
+* website intelligence
+* user administration APIs
+
+These exclusions must not be implemented during Phase 4.

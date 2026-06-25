@@ -99,107 +99,21 @@ contacts
 
 * id (UUID, PK)
 * business_id (FK → businesses.id)
+* source_id (UUID, FK -> data_sources.id)
 * full_name (TEXT)
 * role (TEXT, nullable)
-* email (TEXT, nullable)
-* phone (TEXT, nullable)
+* email (TEXT, nullable; encrypted at repository persistence boundary)
+* phone (TEXT, nullable; encrypted at repository persistence boundary)
 * linkedin_url (TEXT, nullable)
-* is_decision_maker (BOOLEAN)
-* priority_score (INTEGER) — 0–100
+* is_decision_maker (BOOLEAN) - MVP default false; Phase 4 must not infer decision-maker status
+* priority_score (INTEGER) - MVP default 0; Phase 4 must not calculate lead ranking
 * source_url (TEXT)
+* collection_timestamp (TIMESTAMP)
 * created_at (TIMESTAMP)
 
 ---
 
-## 2.5 Future Decision Makers View (Logical Layer)
-
-Not necessarily a separate table — derived from `contacts`.
-
-Definition:
-
-* role IN (CEO, Founder, Owner, Managing Director, COO)
-  OR
-* priority_score >= 80
-
----
-
-## 2.6 Future Business Enrichment Table
-
-Stores AI + scraping intelligence.
-
-```sql
-business_enrichment
-```
-
-### Fields
-
-* id (UUID, PK)
-
-* business_id (FK)
-
-* has_website (BOOLEAN)
-
-* has_chatbot (BOOLEAN)
-
-* has_booking_system (BOOLEAN)
-
-* has_whatsapp (BOOLEAN)
-
-* has_contact_form (BOOLEAN)
-
-* tech_stack (JSONB)
-
-* facebook_url (TEXT)
-
-* instagram_url (TEXT)
-
-* linkedin_url (TEXT)
-
-* youtube_url (TEXT)
-
-* seo_score (INTEGER)
-
-* website_speed_score (INTEGER)
-
-* mobile_friendly (BOOLEAN)
-
-* ai_opportunity_score (INTEGER)
-
-* last_scanned (TIMESTAMP)
-
----
-
-## 2.7 Future Opportunity Scores Table
-
-Stores AI-generated lead value scoring.
-
-```sql
-opportunity_scores
-```
-
-### Fields
-
-* id (UUID, PK)
-
-* business_id (FK)
-
-* total_score (INTEGER) — 0–100
-
-* has_chatbot_gap_score (INTEGER)
-
-* has_booking_gap_score (INTEGER)
-
-* automation_potential_score (INTEGER)
-
-* digital_presence_score (INTEGER)
-
-* recommendation (TEXT) — AI-generated insight
-
-* created_at (TIMESTAMP)
-
----
-
-## 2.8 Data Sources Table
+## 2.5 Data Sources Table
 
 Tracks where each piece of data came from.
 
@@ -235,7 +149,7 @@ data_sources
 
 ---
 
-## 2.9 Social Profiles Table
+## 2.6 Social Profiles Table
 
 Stores social media links separately for normalization.
 
@@ -252,7 +166,7 @@ social_profiles
 
 ---
 
-## 2.10 Search Logs Table
+## 2.7 Search Logs Table
 
 Tracks user searches for analytics and caching.
 
@@ -282,7 +196,7 @@ search_logs
 
 ---
 
-## 2.11 Exports Table
+## 2.8 Exports Table
 
 Tracks CSV export requests and generated files.
 
@@ -303,7 +217,7 @@ exports
 
 ---
 
-## 2.12 Background Jobs Table
+## 2.9 Background Jobs Table
 
 Supports the V1 database-backed polling worker system.
 
@@ -327,7 +241,7 @@ background_jobs
 
 ---
 
-## 2.13 Audit Logs Table
+## 2.10 Audit Logs Table
 
 Tracks security and user activity events.
 
@@ -353,15 +267,18 @@ audit_logs
 businesses
    │
    ├── contacts
-   ├── business_enrichment (future)
-   ├── opportunity_scores (future)
    ├── data_sources
    └── social_profiles
+
+data_sources
+   │
+   └── contacts
 
 users
    │
    ├── refresh_tokens
    ├── exports
+   ├── search_logs
    └── audit_logs
 ```
 
@@ -378,46 +295,38 @@ Everything revolves around a business entity.
 ## 4.2 Separation of Concerns
 
 * Contacts ≠ Businesses
-* Future enrichment ≠ Core Data
-* Future scores ≠ Raw Data
 * Sources ≠ Business Entity
 
 ---
 
-## 4.3 AI-Ready Structure
-
-Fields like:
-
-* ai_opportunity_score
-* recommendation
-* tech_stack (JSONB)
-
-are designed for future AI expansion.
-
----
-
-## 4.4 Source Traceability
+## 4.3 Source Traceability
 
 Every piece of data must be traceable via:
 
 * data_sources table
+* source_id when a collected contact is stored
 * source_url
 * trust_tier
 
 ---
 
-## 4.5 Decision Maker Logic
+## 4.4 Contact Source Traceability
 
-Decision makers are NOT stored separately.
+Every collected contact must be traceable to:
 
-They are derived from:
+* `contacts.business_id`
+* `contacts.source_id`
+* `contacts.collection_timestamp`
 
-* contacts.role
-* contacts.priority_score
+`contacts.source_id` references `data_sources.id`. `contacts.source_url` is retained for readable attribution and must match the referenced source record.
+
+Phase 4 must not infer decision-maker status or calculate lead ranking.
 
 ---
 
 # 5. Indexing Strategy (Important for performance)
+
+Phase 4A may add schema changes required for documented source traceability, deduplication, and job idempotency. These changes are part of Phase 4A implementation scope and do not change the approved technology stack.
 
 ## businesses
 
@@ -428,8 +337,23 @@ They are derived from:
 ## contacts
 
 * (business_id)
+* (source_id)
+* (collection_timestamp)
 * (role)
 * (is_decision_maker)
+
+Partial unique indexes required for retry-safe public contact collection:
+
+* `ux_contacts_business_source_email` on `(business_id, source_id, lower(email))` where `email IS NOT NULL`
+* `ux_contacts_business_source_phone` on `(business_id, source_id, phone)` where `email IS NULL AND phone IS NOT NULL`
+* `ux_contacts_business_source_name_url` on `(business_id, source_id, lower(full_name), source_url)` where `email IS NULL AND phone IS NULL`
+
+These indexes enforce the documented deduplication order without requiring new columns.
+
+## data_sources
+
+* (business_id)
+* unique `(business_id, source_url)`
 
 ## refresh_tokens
 
@@ -438,15 +362,12 @@ They are derived from:
 * (expires_at)
 * (revoked_at)
 
-## opportunity_scores
-
-* (total_score)
-
 ## background_jobs
 
 * (status)
 * (job_type)
 * (locked_at)
+* partial unique `(job_type, payload->>'idempotency_key')` where `status IN ('pending', 'running')`
 
 ## exports
 
@@ -459,8 +380,13 @@ They are derived from:
 
 * A business cannot exist without at least one source entry
 * Contacts must belong to a business
-* Future enrichment must be tied to a business
-* Future scores must always be derived, not manually entered
+* Contacts collected by Phase 4 must reference a `data_sources.id` through `contacts.source_id`
+* Contacts collected by Phase 4 must store `collection_timestamp`
+* Contact email and phone values must be encrypted before insert/update according to `security-standards.md`
+* `data_sources` must be unique by `(business_id, source_url)` for Phase 4 collected sources
+* Active background jobs must be unique by `(job_type, payload.idempotency_key)`
+* Phase 4 must not infer decision-maker status
+* Phase 4 must not calculate lead ranking
 * Duplicate businesses must be merged based on:
 
   * website OR
@@ -496,5 +422,5 @@ It is optimized for:
 
 * simplicity
 * scalability
-* AI augmentation
+* traceable public data collection
 * fast querying

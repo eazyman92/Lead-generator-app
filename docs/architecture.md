@@ -17,7 +17,7 @@ The system is optimized for:
 * Low cost operation (no mandatory paid APIs)
 * Future scalability (worker-based architecture)
 
-MVP scope includes business search, business details, contact information from public sources, and CSV export. Future releases may add decision-maker enrichment, scoring, and advanced intelligence.
+MVP scope includes business search, business details, contact information from public sources, and CSV export. Phase 4 is limited to public data acquisition and must not add decision-maker identification, opportunity scoring, or AI enrichment.
 
 ---
 
@@ -43,11 +43,6 @@ MVP scope includes business search, business details, contact information from p
 │ PostgreSQL   │  │ Worker       │  │ External Web │
 │ Database     │  │ Service      │  │ Sources      │
 └──────────────┘  │ (Jobs)       │  └──────────────┘
-                  └──────┬───────┘
-                         ▼
-                  ┌──────────────┐
-                  │ Future       │
-                  │ Scoring      │
                   └──────────────┘
 ```
 
@@ -109,15 +104,15 @@ Responsibilities:
 
 * Store all business data
 * Store contacts
-* Store future enrichment results
-* Store future opportunity scores
 * Maintain source traceability
+
+Every collected contact is traced by `business_id`, `source_id`, and `collection_timestamp`.
 
 Key Design:
 
 * Business-centric relational model
 * Indexed for location + industry queries
-* JSONB for flexible enrichment data
+* JSONB for job payloads and operational metadata
 
 ---
 
@@ -133,8 +128,6 @@ Responsibilities:
 * Website crawling
 * Contact extraction from public sources
 * CSV export preparation
-* Future enrichment processing
-* Future opportunity scoring
 
 Execution Model:
 
@@ -177,7 +170,7 @@ User → Next.js UI
 
 ## 4.2 Contact Collection Flow
 
-```text id="flow-enrich"
+```text id="flow-contact-collection"
 API Trigger
    ↓
 Database-backed job queue
@@ -191,19 +184,11 @@ Database update
 
 ---
 
-## 4.3 Future Scoring Flow
+## 4.3 MVP Boundary
 
-```text id="flow-score"
-Business Data
-   ↓
-Scoring Engine
-   ↓
-Opportunity Score Calculation
-   ↓
-Store in PostgreSQL
-   ↓
-Expose via API
-```
+Phase 4 worker flows are limited to public contact collection, source traceability, CSV export background processing, and allowed background job execution.
+
+CSV export background processing is part of the MVP. Export requests create one export record and one `csv_export` background job.
 
 ---
 
@@ -236,7 +221,9 @@ Worker endpoints:
 
 * NOT publicly accessible
 * Internal network only (Docker network)
-* Token-protected internal API calls
+* Authenticated with `INTERNAL_API_TOKEN`
+* Successful internal token validation resolves to the `system_worker` identity
+* Authorized with worker-specific RBAC permissions
 
 ---
 
@@ -311,7 +298,7 @@ Heavy tasks are handled via worker service:
 
 * public contact collection
 * crawling
-* future scoring
+* CSV export generation
 
 ---
 
@@ -353,7 +340,7 @@ Future upgrades:
 # 9. Failure Handling Strategy
 
 * Worker retries on failure
-* Dead-letter job handling (future)
+* Dead-letter job handling
 * Graceful API degradation
 * Partial contact collection fallback allowed
 
@@ -365,7 +352,7 @@ Future upgrades:
 * No distributed system complexity
 * No multi-cloud setup
 * No Kubernetes in V1
-* No external paid enrichment APIs
+* No external paid data APIs
 
 ---
 

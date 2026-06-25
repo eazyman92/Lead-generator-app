@@ -67,16 +67,25 @@ Private personal emails must not be collected unless they are explicitly publish
 
 # 6. Source Traceability
 
-Every collected business or contact record must include:
+Every collected business or contact record must be traceable to:
 
 * source_type
 * source_url
 * trust_tier
 * confidence_score
 
+For contacts, these source attributes are stored on `data_sources` and linked from `contacts.source_id`. Contact records must store `business_id`, `source_id`, `source_url`, and `collection_timestamp`.
+
 ---
 
-# 7. Future Releases
+# 7. MVP Exclusions
 
-Future decision-maker enrichment, scoring, and advanced intelligence must continue to follow this policy unless a stricter policy replaces it.
+MVP collection must not include:
 
+* decision-maker identification
+* opportunity scoring
+* AI enrichment
+* credentialed scraping
+* paid datasets
+
+Any later expansion requires a separate approved policy update before implementation.

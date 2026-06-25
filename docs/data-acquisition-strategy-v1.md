@@ -1,332 +1,240 @@
-# Data Acquisition Strategy V1 (Updated)
+# Data Acquisition Strategy V1
 
-## Project Name
+Project: Lead Generator App
 
-Lead Generator App
+Status: MVP documentation for Phase 4 Data Acquisition Engine.
 
----
+## 1. Purpose
 
-# 1. Purpose
+This document defines the approved MVP data acquisition strategy.
 
-This document defines how the platform discovers, collects, validates, and exports business and public contact data.
+Phase 4 may collect publicly available business and contact information from allowed sources. Phase 4 must not implement decision-maker identification, opportunity scoring, AI enrichment, technology intelligence, or paid-data acquisition.
 
-It introduces an enhanced focus on:
+## 2. Approved MVP Scope
 
-* Public Contact Collection
-* Source Traceability
-* Email Sourcing Rules
-* Source Trust Ranking System
+Included:
 
----
+* Business discovery by industry and location.
+* Website discovery for official public business websites.
+* Public contact page discovery.
+* Public contact extraction.
+* Public email and phone extraction when explicitly published.
+* Public social profile URL collection when explicitly linked or published by the business.
+* Source traceability for collected data.
+* Export generation as a background job.
 
-# 2. Core Principles
+Excluded:
 
-* Data must be sourced from publicly available information only.
-* Publicly listed business contact information is higher priority than unverified third-party data.
-* Verified contact collection is more valuable than raw collection.
-* Data must be traceable to a source.
-* Multiple sources increase confidence score.
-* Simplicity and reliability over aggressive scraping.
+* Decision-maker identification.
+* Role-based lead prioritization.
+* Opportunity scoring.
+* AI enrichment.
+* Website technology detection.
+* Chatbot, booking, analytics, or CMS detection.
+* LinkedIn scraping automation.
+* Hidden email guessing.
+* Paid datasets.
+* Outreach automation.
+* CRM workflows.
 
----
+## 3. Core Principles
 
-# 3. Data Acquisition Pipeline
+* Collect public business data only.
+* Prefer official business websites and official contact pages.
+* Store source URLs for traceability.
+* Respect robots.txt where applicable.
+* Stop collection when blocked.
+* Avoid repeated failed requests.
+* Use conservative request rates.
+* Do not bypass access controls.
+* Do not collect private or credentialed data.
 
-## Stage 1: Business Discovery
+## 4. Acquisition Workflow
 
-Identify businesses using:
+### Stage 1: Business Discovery
 
-* Industry
-* Country
-* State / Region
-* City
+Inputs:
 
-Output:
+* industry
+* country
+* state
+* city
+* request_id
+* user_id when triggered by a user action
 
-* Business name
-* Website (if available)
-* Basic listing information
+Outputs:
 
----
+* business name
+* website when available
+* phone when publicly listed
+* address
+* industry
+* country
+* state
+* city
+* source attribution
 
-## Stage 2: Base Data Collection
+### Stage 2: Website Discovery
 
-Collect foundational business data:
+The worker may identify official public websites from allowed public sources.
 
-* Business name
-* Website
-* Phone number
-* Address
-* Industry category
-* Location hierarchy
+Allowed website discovery targets:
 
----
+* official business website
+* official contact page
+* official about page
+* official footer contact area
 
-## Stage 3: Website Discovery
+The worker must not authenticate into websites or bypass access restrictions.
 
-Locate official company web presence:
+### Stage 3: Public Contact Extraction
 
-* Primary website
-* Contact page
-* About page
-* Team or leadership page
+The worker may collect public contact data only when explicitly published.
 
----
+Allowed contact fields:
 
-## Stage 4: Public Contact Extraction
+* full_name when explicitly listed
+* role when explicitly listed
+* public business email
+* public business phone
+* source_url
 
-### 4.1 Contact Hierarchy Model
-
-Contacts are categorized into tiers:
-
-#### Future Tier 1 — Decision Makers
-
-* CEO
-* Founder
-* Owner
-* Managing Director
-* COO
-
-#### Tier 2 — Senior Management
-
-* CMO
-* CTO
-* Head of Operations
-* Head of Marketing
-
-#### Tier 3 — Functional Contacts
-
-* Sales Manager
-* Support Manager
-* HR Manager
-
-#### Tier 4 — Generic Contacts
-
-* info@
-* contact@
-* sales@
-* support@
-
----
-
-### 4.2 Future Decision Maker Identification Layer
-
-Future releases may attempt to identify decision makers using:
-
-* Company About pages
-* Team pages
-* Leadership pages
-* Press releases
-* Public company profiles
-* Verified public directories
-
-Output:
-
-* Full name
-* Role / title
-* Company association
-* Source URL
-
----
-
-# 5. Email Sourcing Rules
-
-Email collection must follow strict hierarchy:
-
-## 5.1 Primary Sources (Highest Trust)
-
-* Official company website
-* Contact page
-* About page
-* Footer contact sections
-
-Collected emails:
+Generic business contacts are allowed:
 
 * info@
 * contact@
 * sales@
 * support@
+* hello@
 
----
+Named contacts are allowed only when the contact information is explicitly published as business contact information. The worker must not infer decision-maker status.
 
-## 5.2 Secondary Sources
+### Stage 4: Social Profile URL Collection
 
-* Public leadership pages
-* Press releases
-* Public business directories
-* Official social media profiles (only where email is explicitly shown)
+The worker may store public social profile URLs when explicitly linked from an allowed source.
 
----
-
-## 5.3 Future Decision Maker Emails
-
-Future decision maker emails may be collected only when:
-
-* Explicitly published on official websites OR
-* Clearly associated with named contacts on public pages
-
-Examples:
-
-* [john.smith@company.com](mailto:john.smith@company.com)
-* [ceo@company.com](mailto:ceo@company.com) (role-based but high intent)
-* [firstname.lastname@company.com](mailto:firstname.lastname@company.com) (only if publicly confirmed pattern)
-
----
-
-## 5.4 Prohibited in V1
-
-* No hidden email guessing without domain confirmation
-* No private email harvesting
-* No LinkedIn scraping for emails
-
----
-
-# 6. Source Trust Ranking System
-
-Each data source is assigned a trust level:
-
-## Tier A — Highest Trust
-
-* Official company website
-* Contact pages
-* About pages
-* Leadership pages
-
-Confidence: 90–100%
-
----
-
-## Tier B — High Trust
-
-* Press releases
-* Verified business registries
-* Government business directories
-
-Confidence: 75–90%
-
----
-
-## Tier C — Medium Trust
-
-* Industry directories
-* Public listings
-* Aggregated business databases
-
-Confidence: 50–75%
-
----
-
-## Tier D — Low Trust
-
-* Unverified third-party sources
-* User-generated listings
-* Outdated directories
-
-Confidence: 0–50%
-
----
-
-# 7. Data Enrichment Layer
-
-Each business is enriched with:
-
-## 7.1 Communication Intelligence
-
-* Phone number
-* Public email
-* Contact page URL
-* Contact form presence
-* WhatsApp availability
-
----
-
-## 7.2 Social Intelligence
+Allowed platforms:
 
 * Facebook
 * Instagram
-* LinkedIn
+* LinkedIn company profile
 * YouTube
 
----
+The worker must not scrape LinkedIn for emails or private profile data.
 
-## 7.3 Website Intelligence
+### Stage 5: Source Attribution
 
-* CMS detection
-* Chatbot presence
-* Booking system detection
-* Technology stack
-* Analytics tools
+Every collected business, contact, and social profile update must be traceable to a source.
 
----
+Source records use:
 
-# 8. Future Opportunity Detection Layer
+* source_type
+* source_url
+* trust_tier
+* confidence_score
+* collected_at
 
-Future releases may identify business needs:
+Contact records must store `business_id`, `source_id`, `source_url`, and `collection_timestamp`. Contact source type, trust tier, and confidence score are represented by `contacts.source_id -> data_sources.id`.
 
-## Indicators:
+## 5. Allowed Sources
 
-* No chatbot → AI support opportunity
-* No booking system → automation opportunity
-* Weak online presence → digital transformation opportunity
-* High reviews but poor response → automation opportunity
+Allowed sources:
 
-Output:
+* official business websites
+* public contact pages
+* public about pages
+* public business directories
+* government business registries
+* verified business registries
+* public social profiles where contact information is explicitly shown
 
-* Opportunity type
-* Score (0–100)
-* Suggested service angle
+## 6. Prohibited Sources And Methods
 
----
+Prohibited:
 
-# 9. Data Quality Rules
-
-* Remove duplicates across sources
-* Normalize phone formats
-* Normalize URLs
-* Validate location hierarchy consistency
-* Assign confidence score per business
-* Require minimum 2 sources for high-confidence leads
-
----
-
-# 10. Data Refresh Strategy
-
-* Active businesses: refresh every 30 days
-* Inactive businesses: refresh every 90 days
-* High-value leads: refresh every 14 days
-
----
-
-# 11. Version 1 Scope
-
-## Included:
-
-* Business discovery
-* Website discovery
-* Public contact extraction
-* Email sourcing (public only)
-* Social profile collection
-* CSV export
-
-## Not Included:
-
-* Decision-maker enrichment
-* Opportunity scoring
-* Advanced intelligence
+* private data
+* credentialed scraping
+* bypassing access controls
+* hidden email guessing
 * LinkedIn scraping automation
-* Email guessing at scale
-* Paid datasets
-* Outreach automation
-* CRM system
-* Email verification services
+* paid datasets
+* data from pages that explicitly prohibit automated collection
+* repeated requests after a block or denial
 
----
+## 7. Source Trust Ranking
 
-# 12. Success Criteria
+Trust tiers:
 
-Version 1 is successful if:
+| Tier | Source type | Confidence range |
+| --- | --- | --- |
+| A | Official business website, contact page, about page | 90-100 |
+| B | Government registry, verified registry, press release | 75-90 |
+| C | Public industry directory or business listing | 50-75 |
+| D | Unverified public third-party listing | 0-50 |
 
-* Users can find businesses by industry + location
-* Public emails are accurately extracted
-* Business details are traceable to public sources
-* CSV exports include selected business and contact fields
+Confidence scores must describe source reliability only. They must not be used for opportunity scoring or lead prioritization in Phase 4.
+
+## 8. Data Quality Rules
+
+Workers must:
+
+* normalize URLs
+* normalize phone numbers where possible
+* trim and normalize whitespace
+* avoid duplicate businesses
+* avoid duplicate contacts for the same business and source
+* preserve source URLs
+* record failed-source reasons without storing secrets or raw page content
+
+## 9. Job Usage
+
+Phase 4 acquisition runs through PostgreSQL-backed background jobs using the existing `background_jobs` table.
+
+Approved Phase 4 acquisition job type:
+
+```text
+contact_collection
+```
+
+Allowed supporting job type:
+
+```text
+csv_export
+```
+
+The `csv_export` job is part of the MVP background job system. One export request creates one active export job.
+
+## 10. Audit Logging
+
+Workers must log the canonical background job lifecycle events for job state changes:
+
+* `background_job_created`
+* `background_job_started`
+* `background_job_completed`
+* `background_job_failed`
+* `background_job_retry_scheduled`
+* `background_job_dead_lettered`
+
+Workers must log contact collection domain events for collection-specific activity:
+
+* `contact_collection_started`
+* `contact_collection_completed`
+* `contact_collection_failed`
+* `source_skipped`
+* `robots_denied`
+* `contact_collected`
+* `data_source_recorded`
+
+Audit metadata must not include passwords, tokens, secrets, raw cookies, raw HTML, or raw database errors.
+
+## 11. Success Criteria
+
+Phase 4 design is successful when:
+
+* Public contact collection can be implemented without ambiguity.
+* Job lifecycle and retries are fully specified.
+* Dead-letter handling is fully specified.
+* Internal API contracts are fully specified.
+* Compliance rules are enforceable.
+* Source traceability is documented for contacts and businesses.
+* No decision-maker identification, opportunity scoring, or AI enrichment is included.

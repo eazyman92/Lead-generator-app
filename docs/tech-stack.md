@@ -134,8 +134,6 @@ FastAPI
 * Data extraction
 * Contact discovery
 * Public contact collection
-* Future decision-maker identification
-* Future opportunity scoring
 
 ---
 
@@ -183,7 +181,7 @@ PostgreSQL
 ## 6.4 Data Features Used
 
 * relational modeling
-* JSONB for enrichment data
+* JSONB for job payloads and operational metadata
 * indexing for search optimization
 
 ---
@@ -193,8 +191,6 @@ PostgreSQL
 * store all businesses
 * store contacts
 * store public contact data
-* store future enrichment data
-* store future opportunity scores
 * store sources & audit logs
 
 ---
@@ -414,7 +410,6 @@ Meaning:
 ## Allowed to change via config:
 
 * UI branding
-* scoring weights
 * feature flags
 * country/industry data
 

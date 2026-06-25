@@ -425,7 +425,9 @@ Returns:
         "linkedin_url": null,
         "is_decision_maker": false,
         "priority_score": 0,
+        "source_id": "uuid",
         "source_url": "https://abcfitness.example/contact",
+        "collection_timestamp": "2026-06-25T00:00:00Z",
         "created_at": "2026-06-25T00:00:00Z"
       }
     ],
@@ -467,13 +469,17 @@ POST /api/v1/exports
 }
 ```
 
+Creates an export record and one `csv_export` background job. CSV export generation is part of the MVP background job system.
+
 ### Response
 
 ```json
 {
   "success": true,
   "data": {
-    "download_url": "<signed-download-url>"
+    "export_id": "uuid",
+    "job_id": "uuid",
+    "status": "pending"
   },
   "message": null,
   "request_id": "..."
@@ -534,83 +540,123 @@ Returns:
 
 ---
 
-# 9. Future APIs
+# 9. MVP Exclusions
 
-Future APIs are not part of the V1 MVP implementation.
+The following are not part of V1 MVP APIs:
 
-## 9.1 Trigger Enrichment
-
-```
-POST /api/future/enrichment/{business_id}
-```
-
-### Auth Required: ADMIN / SYSTEM
-
-Triggers:
-
-* website scraping
-* tech detection
-* contact extraction
-* social profile discovery
+* decision-maker identification
+* opportunity scoring
+* AI enrichment
+* website intelligence
+* technology detection
+* outreach automation
 
 ---
 
-## 9.2 Generate Score
-
-```
-POST /api/future/scores/{business_id}
-```
-
-### Auth Required: SYSTEM
-
-Returns:
-
-```json
-{
-  "success": true,
-  "data": {
-    "score": 92,
-    "factors": {
-      "no_chatbot": 20,
-      "no_booking": 15,
-      "high_reviews": 10
-    }
-  },
-  "message": null,
-  "request_id": "..."
-}
-```
-
----
-
-# 10. Internal System APIs (Locked Down)
+# 10. Internal System APIs (INTERNAL APIs)
 
 These endpoints are NOT public.
 
-## 10.1 Contact Collection Worker
+Internal endpoints use `/internal/v1/*` and must be reachable only on the private service network.
+
+Canonical internal security model:
+
+* Authentication: `INTERNAL_API_TOKEN` in `X-Internal-API-Token`
+* Identity: successful validation resolves to `system_worker`
+* Authorization: worker-specific RBAC permissions
+* Required tracing header: `X-Request-ID`
+
+## 10.1 Create Contact Collection Job
 
 ```
 POST /internal/v1/contact-collection
 ```
 
-## 10.2 CSV Export Worker
+Required permission: `internal:contact_collection`
+
+Creates or returns an existing idempotent `contact_collection` background job.
+
+Active duplicate jobs are prevented by `ux_background_jobs_active_idempotency`.
+
+## 10.2 Create CSV Export Job
 
 ```
 POST /internal/v1/csv-export
 ```
 
+Required permission: `internal:csv_export`
+
+Creates or returns the single active `csv_export` background job for an export request.
+
+Active duplicate jobs are prevented by `ux_background_jobs_active_idempotency`.
+
+## 10.3 Get Job Status
+
+```
+GET /internal/v1/jobs/{job_id}
+```
+
+Required permission: `internal:job_read`
+
+Returns status, attempts, retry metadata, cancellation metadata, and dead-letter metadata for a background job.
+
+## 10.4 Retry Job
+
+```
+POST /internal/v1/jobs/{job_id}/retry
+```
+
+Required permission: `internal:job_retry`
+
+Creates a new retry job from a sanitized failed or dead-lettered job payload. The original job remains immutable.
+
+## 10.5 Cancel Job
+
+```
+POST /internal/v1/jobs/{job_id}/cancel
+```
+
+Required permission: `internal:job_cancel`
+
+Cancels a cancellable pending or running job. Cancellation is represented as `status = "failed"` with `payload.cancelled = true` and `payload.dead_letter = false`.
+
+## 10.6 Internal Job Error Codes
+
+Canonical job error codes:
+
+* `INVALID_PAYLOAD`
+* `BUSINESS_NOT_FOUND`
+* `PROHIBITED_SOURCE`
+* `ROBOTS_DENIED`
+* `SOURCE_AUTH_REQUIRED`
+* `SOURCE_FORBIDDEN`
+* `SOURCE_BLOCKED`
+* `UNSUPPORTED_CONTENT_TYPE`
+* `NETWORK_TIMEOUT`
+* `DNS_FAILURE`
+* `HTTP_429`
+* `HTTP_5XX`
+* `MAX_ATTEMPTS_EXCEEDED`
+* `JOB_NOT_FOUND`
+* `JOB_NOT_RETRYABLE`
+* `JOB_NOT_CANCELLABLE`
+* `JOB_CANCELLED`
+* `UNKNOWN_JOB_TYPE`
+
+Detailed internal API request and response contracts are defined in `internal-api-contracts.md`.
+
 ---
 
-# 12. Security Controls
+# 11. Security Controls
 
-## 12.1 Rate Limiting
+## 11.1 Rate Limiting
 
 * 60 requests/min per user
 * 1000 requests/day per user
 
 ---
 
-## 12.2 IP Monitoring
+## 11.2 IP Monitoring
 
 * Block suspicious IPs
 * Detect scraping patterns
@@ -618,7 +664,7 @@ POST /internal/v1/csv-export
 
 ---
 
-## 12.3 Audit Logging
+## 11.3 Audit Logging
 
 Every request logs:
 
@@ -631,7 +677,7 @@ Every request logs:
 
 ---
 
-## 12.4 Data Protection
+## 11.4 Data Protection
 
 * No raw database exposure
 * No direct SQL access from API layer
@@ -639,24 +685,26 @@ Every request logs:
 
 ---
 
-## 12.5 Encryption
+## 11.5 Encryption
 
 * TLS 1.2+ required
-* Sensitive fields encrypted at rest (emails, contacts)
+* Sensitive fields encrypted at rest where required by `security-standards.md`
+* Phase 4 contact email and phone values are encrypted at the repository persistence boundary using `ENCRYPTION_KEY`
+* Traceability fields such as `source_id`, `source_url`, and `collection_timestamp` remain queryable
 
 ---
 
-# 13. Role-Based Access Control (RBAC)
+# 12. Role-Based Access Control (RBAC)
 
 | Role          | Permissions                |
 | ------------- | -------------------------- |
 | user          | search, view, export       |
-| admin         | enrich, score, manage data |
+| admin         | manage permitted user-facing and internal MVP workflows |
 | system_worker | internal pipelines only    |
 
 ---
 
-# 14. API Design Principles
+# 13. API Design Principles
 
 * No protected endpoint without authentication
 * No unbounded queries
@@ -666,7 +714,7 @@ Every request logs:
 
 ---
 
-# 15. Error Response Format
+# 14. Error Response Format
 
 All errors must use:
 
@@ -683,7 +731,7 @@ All errors must use:
 
 ---
 
-# 16. V1 Security Summary
+# 15. V1 Security Summary
 
 This API is designed to:
 
@@ -691,12 +739,12 @@ This API is designed to:
 * protect data integrity
 * ensure traceability
 * limit scraping attacks
-* enforce controlled future enrichment
+* enforce controlled internal worker access
 * support future scaling
 
 ---
 
-# 17. Future Enhancements (NOT V1)
+# 16. Future Enhancements (NOT V1)
 
 * API gateway (Kong / AWS API Gateway)
 * OAuth2 login (Google / GitHub)

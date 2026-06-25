@@ -4,12 +4,15 @@ Project: Lead Generator App
 
 Repository: lead-generator-app
 
-Scope: Current database foundation through Phase 3 remediation.
+Scope: Phase 4A target database foundation.
 
 Source of truth:
 
 * `database/migrations/versions/20260624_0001_initial_core_schema.py`
 * `database/migrations/versions/20260625_0002_scope_search_logs_to_users.py`
+* Phase 4A required migration scope documented in `data-model.md`
+
+Phase 4A implementation must add the documented contact traceability fields, foreign key, indexes, and uniqueness constraints before contact collection is enabled.
 
 ## Mermaid ERD
 
@@ -23,6 +26,7 @@ erDiagram
     businesses ||--o{ contacts : has
     businesses ||--o{ social_profiles : has
     businesses ||--o{ data_sources : traced_by
+    data_sources ||--o{ contacts : sources
 
     users {
         UUID id PK
@@ -67,6 +71,7 @@ erDiagram
     contacts {
         UUID id PK
         UUID business_id FK
+        UUID source_id FK
         TEXT full_name
         TEXT role
         TEXT email
@@ -75,6 +80,7 @@ erDiagram
         BOOLEAN is_decision_maker
         INTEGER priority_score
         TEXT source_url
+        TIMESTAMP collection_timestamp
         TIMESTAMP created_at
     }
 
@@ -150,6 +156,7 @@ erDiagram
 | `refresh_tokens` | `user_id` | `users` | `id` | Many refresh tokens belong to one user | `ON DELETE CASCADE` |
 | `refresh_tokens` | `replaced_by_token_id` | `refresh_tokens` | `id` | A refresh token may point to its replacement token | `ON DELETE SET NULL` |
 | `contacts` | `business_id` | `businesses` | `id` | Many contacts belong to one business | `ON DELETE CASCADE` |
+| `contacts` | `source_id` | `data_sources` | `id` | Many contacts may reference one data source | `ON DELETE RESTRICT` |
 | `data_sources` | `business_id` | `businesses` | `id` | Many data sources belong to one business | `ON DELETE CASCADE` |
 | `social_profiles` | `business_id` | `businesses` | `id` | Many social profiles belong to one business | `ON DELETE CASCADE` |
 | `search_logs` | `user_id` | `users` | `id` | Many search logs belong to one user | `ON DELETE CASCADE` |
@@ -292,6 +299,7 @@ Stores public contact information associated with businesses.
 | --- | --- | --- | --- |
 | `id` | UUID | No | Primary key |
 | `business_id` | UUID | No | Foreign key |
+| `source_id` | UUID | No | Foreign key |
 | `full_name` | TEXT | No |  |
 | `role` | TEXT | Yes |  |
 | `email` | TEXT | Yes |  |
@@ -300,6 +308,7 @@ Stores public contact information associated with businesses.
 | `is_decision_maker` | BOOLEAN | No |  |
 | `priority_score` | INTEGER | No |  |
 | `source_url` | TEXT | No |  |
+| `collection_timestamp` | TIMESTAMP WITH TIME ZONE | No |  |
 | `created_at` | TIMESTAMP WITH TIME ZONE | No |  |
 
 Primary key:
@@ -313,14 +322,23 @@ Foreign keys:
 | Constraint | Columns | References | Delete behavior |
 | --- | --- | --- | --- |
 | `fk_contacts_business_id_businesses` | `business_id` | `businesses(id)` | `ON DELETE CASCADE` |
+| `fk_contacts_source_id_data_sources` | `source_id` | `data_sources(id)` | `ON DELETE RESTRICT` |
 
-Unique constraints: None.
+Unique constraints:
+
+| Constraint | Columns | Rule |
+| --- | --- | --- |
+| `ux_contacts_business_source_email` | `business_id`, `source_id`, `lower(email)` | Partial unique index where `email IS NOT NULL` |
+| `ux_contacts_business_source_phone` | `business_id`, `source_id`, `phone` | Partial unique index where `email IS NULL AND phone IS NOT NULL` |
+| `ux_contacts_business_source_name_url` | `business_id`, `source_id`, `lower(full_name)`, `source_url` | Partial unique index where `email IS NULL AND phone IS NULL` |
 
 Indexes:
 
 | Index | Columns |
 | --- | --- |
 | `ix_contacts_business_id` | `business_id` |
+| `ix_contacts_source_id` | `source_id` |
+| `ix_contacts_collection_timestamp` | `collection_timestamp` |
 | `ix_contacts_is_decision_maker` | `is_decision_maker` |
 | `ix_contacts_role` | `role` |
 
@@ -393,7 +411,11 @@ Foreign keys:
 | --- | --- | --- | --- |
 | `fk_data_sources_business_id_businesses` | `business_id` | `businesses(id)` | `ON DELETE CASCADE` |
 
-Unique constraints: None.
+Unique constraints:
+
+| Constraint | Columns | Rule |
+| --- | --- | --- |
+| `uq_data_sources_business_source_url` | `business_id`, `source_url` | Unique source URL per business |
 
 Indexes:
 
@@ -510,7 +532,11 @@ Primary key:
 
 Foreign keys: None.
 
-Unique constraints: None.
+Unique constraints:
+
+| Constraint | Columns | Rule |
+| --- | --- | --- |
+| `ux_background_jobs_active_idempotency` | `job_type`, `payload->>'idempotency_key'` | Partial unique index where `status IN ('pending', 'running')` |
 
 Indexes:
 
@@ -569,12 +595,12 @@ Indexes:
 | `users` | `ix_users_email` |
 | `refresh_tokens` | `ix_refresh_tokens_user_id`, `ix_refresh_tokens_token_hash`, `ix_refresh_tokens_expires_at`, `ix_refresh_tokens_revoked_at` |
 | `businesses` | `ix_businesses_country_state_city`, `ix_businesses_industry`, `ix_businesses_name`, `ix_businesses_phone`, `ix_businesses_website` |
-| `contacts` | `ix_contacts_business_id`, `ix_contacts_is_decision_maker`, `ix_contacts_role` |
+| `contacts` | `ix_contacts_business_id`, `ix_contacts_source_id`, `ix_contacts_collection_timestamp`, `ix_contacts_is_decision_maker`, `ix_contacts_role`, `ux_contacts_business_source_email`, `ux_contacts_business_source_phone`, `ux_contacts_business_source_name_url` |
 | `social_profiles` | `ix_social_profiles_business_id` |
-| `data_sources` | `ix_data_sources_business_id` |
+| `data_sources` | `ix_data_sources_business_id`, `uq_data_sources_business_source_url` |
 | `search_logs` | `ix_search_logs_user_id`, `ix_search_logs_request_id` |
 | `exports` | `ix_exports_user_id`, `ix_exports_status` |
-| `background_jobs` | `ix_background_jobs_job_type`, `ix_background_jobs_locked_at`, `ix_background_jobs_status` |
+| `background_jobs` | `ix_background_jobs_job_type`, `ix_background_jobs_locked_at`, `ix_background_jobs_status`, `ux_background_jobs_active_idempotency` |
 | `audit_logs` | `ix_audit_logs_user_id`, `ix_audit_logs_request_id`, `ix_audit_logs_event_type` |
 
 ## Unique Constraint Summary
@@ -583,3 +609,8 @@ Indexes:
 | --- | --- | --- |
 | `users` | `uq_users_email` | `email` |
 | `refresh_tokens` | `uq_refresh_tokens_token_hash` | `token_hash` |
+| `contacts` | `ux_contacts_business_source_email` | `business_id`, `source_id`, `lower(email)` where `email IS NOT NULL` |
+| `contacts` | `ux_contacts_business_source_phone` | `business_id`, `source_id`, `phone` where `email IS NULL AND phone IS NOT NULL` |
+| `contacts` | `ux_contacts_business_source_name_url` | `business_id`, `source_id`, `lower(full_name)`, `source_url` where `email IS NULL AND phone IS NULL` |
+| `data_sources` | `uq_data_sources_business_source_url` | `business_id`, `source_url` |
+| `background_jobs` | `ux_background_jobs_active_idempotency` | `job_type`, `payload->>'idempotency_key'` where `status IN ('pending', 'running')` |

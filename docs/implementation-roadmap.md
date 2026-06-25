@@ -177,7 +177,7 @@ Enable search functionality.
 ## Worker
 
 * basic data retrieval engine
-* initial scraping integration (public sources only)
+* search logging support
 
 ---
 
@@ -204,9 +204,14 @@ Build real data ingestion system.
 
 ## Components
 
+* Phase 4A database migration for contact traceability and idempotency constraints
 * web scraping module
 * directory parser
-* Google Maps data extraction layer (compliant usage only)
+* public website contact collection
+* CSV export background processing
+* PostgreSQL-backed job queue
+* dead-letter handling
+* internal worker APIs
 * normalization pipeline
 
 ---
@@ -218,109 +223,96 @@ System can populate:
 * business names
 * addresses
 * websites
+* public contact information from public websites
+* source traceability
+* CSV export files
+
+Phase 4 excludes decision-maker identification, LinkedIn people discovery, enrichment, and opportunity scoring.
 
 ---
 
-# 9. Phase 5 — Contact Enrichment System
+# 9. Phase 5 - Frontend Dashboard Completion
 
 ## Goals
 
-Add contact intelligence.
+Complete user-facing dashboard workflows around the data already collected in MVP.
 
 ---
 
 ## Features
 
-* email extraction (public sources only)
-* phone extraction
-* website crawling
-* contact validation
+* improved search result views
+* business detail UI
+* contact/source display UI
+* export status UI
 
 ---
 
 ## Output
 
-Businesses include:
-
-* email
-* phone
-* website contacts
+Users can view collected businesses, contacts, sources, and export status in the dashboard.
 
 ---
 
-# 10. Phase 6 — Decision Maker Identification
+# 10. Phase 6 - Reserved Post-MVP Contact Intelligence
 
 ## Goals
 
-Identify high-value contacts.
+Reserved for future planning. This phase is not part of MVP implementation.
 
 ---
 
 ## Features
 
-* role detection (CEO, founder, manager)
-* public profile-based enrichment where permitted
-* hierarchy scoring system
+Not defined for MVP.
 
 ---
 
 ## Output
 
-Each business includes:
-
-* decision makers
-* priority ranking
+Not defined for MVP.
 
 ---
 
-# 11. Phase 7 — Opportunity Scoring System
+# 11. Phase 7 - Reserved Post-MVP Analysis
 
 ## Goals
 
-Rank leads by value.
+Reserved for future planning. This phase is not part of MVP implementation.
 
 ---
 
-## Scoring Inputs
+## Inputs
 
-* industry
-* size signals
-* website quality
-* tech stack
-* contact availability
+Not defined for MVP.
 
 ---
 
 ## Output
 
-Each lead has:
-
-```text id="score"
-Opportunity Score (0–100)
-```
+Not defined for MVP.
 
 ---
 
-# 12. Phase 8 — Export System
+# 12. Phase 8 - Post-MVP Export Enhancements
 
 ## Goals
 
-Enable data extraction.
+Enhance export workflows after the MVP CSV export background job is operational.
 
 ---
 
 ## Features
 
-* CSV export
 * filtered export
 * bulk selection
-* structured output
+* additional output formats if approved
 
 ---
 
 ## Output
 
-Users can export leads anytime.
+Users can use advanced export workflows beyond the Phase 4 MVP CSV export job.
 
 ---
 
