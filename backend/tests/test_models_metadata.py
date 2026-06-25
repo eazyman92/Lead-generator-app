@@ -48,6 +48,15 @@ def test_search_logs_uses_canonical_table_name() -> None:
     assert "search_queries" not in Base.metadata.tables
 
 
+def test_search_logs_are_user_scoped() -> None:
+    table = Base.metadata.tables["search_logs"]
+
+    assert "user_id" in table.columns
+    assert "request_id" in table.columns
+    assert table.c.user_id.nullable is False
+    assert table.c.request_id.nullable is False
+
+
 def test_required_indexes_are_present() -> None:
     indexes_by_table = {
         table_name: {index.name for index in table.indexes}
@@ -67,4 +76,5 @@ def test_required_indexes_are_present() -> None:
     assert "ix_background_jobs_locked_at" in indexes_by_table["background_jobs"]
     assert "ix_exports_user_id" in indexes_by_table["exports"]
     assert "ix_exports_status" in indexes_by_table["exports"]
-
+    assert "ix_search_logs_user_id" in indexes_by_table["search_logs"]
+    assert "ix_search_logs_request_id" in indexes_by_table["search_logs"]

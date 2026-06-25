@@ -9,8 +9,33 @@ class RoleBearingUser(Protocol):
 
 SUPPORTED_ROLES = {"admin", "user"}
 ROLE_PERMISSIONS: dict[str, set[str]] = {
-    "admin": {"auth:me", "auth:logout", "auth:refresh", "user:read", "user:manage"},
-    "user": {"auth:me", "auth:logout", "auth:refresh", "user:read"},
+    "admin": {
+        "auth:me",
+        "auth:logout",
+        "auth:logout_all",
+        "auth:refresh",
+        "business:read",
+        "contact:read",
+        "export:create",
+        "search:create",
+        "search:history",
+        "source:read",
+        "user:read",
+        "user:manage",
+    },
+    "user": {
+        "auth:me",
+        "auth:logout",
+        "auth:logout_all",
+        "auth:refresh",
+        "business:read",
+        "contact:read",
+        "export:create",
+        "search:create",
+        "search:history",
+        "source:read",
+        "user:read",
+    },
 }
 
 

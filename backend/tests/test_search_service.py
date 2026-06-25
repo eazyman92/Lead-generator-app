@@ -1,0 +1,140 @@
+import asyncio
+from dataclasses import dataclass
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+from app.schemas.search import BusinessSearchRequest, PaginationRequest
+from app.services.search_service import SearchService
+
+
+@dataclass
+class FakeUser:
+    id: UUID
+    role: str = "user"
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.committed = False
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
+class FakeBusinessRepository:
+    def __init__(self) -> None:
+        self.search_calls = []
+
+    async def count_search(self, industry, country, state, city):
+        return 2
+
+    async def search(self, industry, country, state, city, limit, offset):
+        self.search_calls.append(
+            {
+                "industry": industry,
+                "country": country,
+                "state": state,
+                "city": city,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+        return []
+
+
+class FakeSearchLogRepository:
+    def __init__(self) -> None:
+        self.created = []
+
+    async def create(self, values):
+        self.created.append(values)
+
+
+class FakeAuditLogRepository:
+    def __init__(self) -> None:
+        self.events = []
+
+    async def log_event(self, event_type, request_id, user_id=None, ip_address=None, metadata=None):
+        self.events.append(
+            {
+                "event_type": event_type,
+                "request_id": request_id,
+                "user_id": user_id,
+                "ip_address": ip_address,
+                "metadata": metadata,
+            }
+        )
+
+
+def test_search_service_logs_search_and_audit_event() -> None:
+    service = SearchService.__new__(SearchService)
+    service.session = FakeSession()
+    service.businesses = FakeBusinessRepository()
+    service.search_logs = FakeSearchLogRepository()
+    service.audit_logs = FakeAuditLogRepository()
+    user = FakeUser(id=uuid4())
+    context = SimpleNamespace(request_id="request-1", ip_address="127.0.0.1")
+    payload = BusinessSearchRequest(
+        filters={
+            "industry": " Gym ",
+            "country": " United States ",
+            "state": " Texas ",
+            "city": " Houston ",
+        },
+        pagination={"page": 2, "per_page": 10},
+    )
+
+    result = asyncio.run(service.search(payload, user, context))
+
+    assert service.businesses.search_calls == [
+        {
+            "user_id": user.id,
+            "request_id": "request-1",
+            "industry": "Gym",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Houston",
+            "limit": 10,
+            "offset": 10,
+        }
+    ]
+    assert service.search_logs.created == [
+        {
+            "industry": "Gym",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Houston",
+            "results_count": 2,
+        }
+    ]
+    assert service.audit_logs.events[0]["event_type"] == "business_search"
+    assert service.audit_logs.events[0]["user_id"] == user.id
+    assert service.audit_logs.events[0]["metadata"]["results_count"] == 2
+    assert result.pagination.page == 2
+    assert service.session.committed is True
+
+
+def test_search_history_audits_view() -> None:
+    service = SearchService.__new__(SearchService)
+    service.session = FakeSession()
+    service.audit_logs = FakeAuditLogRepository()
+
+    class FakeHistoryRepository:
+        async def count_history(self, user_id):
+            assert user_id == user.id
+            return 0
+
+        async def list_history(self, user_id, limit, offset):
+            assert user_id == user.id
+            return []
+
+    service.search_logs = FakeHistoryRepository()
+    user = FakeUser(id=uuid4())
+    context = SimpleNamespace(request_id="request-2", ip_address="127.0.0.1")
+
+    result = asyncio.run(service.history(PaginationRequest(), user, context))
+
+    assert result.history == []
+    assert service.audit_logs.events[0]["event_type"] == "search_history_viewed"
+    assert service.audit_logs.events[0]["user_id"] == user.id
+    assert service.session.committed is True

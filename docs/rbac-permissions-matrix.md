@@ -51,6 +51,7 @@ internal:contact_collection
 | Endpoint | Method | Required Role | Required Permission | Access Rationale |
 | --- | --- | --- | --- | --- |
 | `/api/v1/search` | `POST` | `user`, `admin` | `search:create` | Allows authenticated users to run MVP business searches by industry and location. |
+| `/api/v1/search/history` | `GET` | `user`, `admin` | `search:history` | Allows authenticated users to review persisted search history from the MVP search log. |
 
 ## Business Endpoint Permissions
 
@@ -86,7 +87,7 @@ Internal endpoints must not be publicly exposed. They must be reachable only thr
 
 | Role | V1 Permissions |
 | --- | --- |
-| `user` | `auth:refresh`, `auth:logout`, `auth:logout_all`, `auth:me`, `search:create`, `business:read`, `contact:read`, `source:read`, `export:create` |
+| `user` | `auth:refresh`, `auth:logout`, `auth:logout_all`, `auth:me`, `search:create`, `search:history`, `business:read`, `contact:read`, `source:read`, `export:create` |
 | `admin` | All `user` permissions plus `audit:read`, `internal:contact_collection`, `internal:csv_export` |
 
 ## Enforcement Rules

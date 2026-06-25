@@ -7,6 +7,8 @@ from app.schemas.common import OrmModel
 
 
 class SearchLogCreate(BaseModel):
+    user_id: UUID
+    request_id: str
     industry: str
     country: str
     state: str
@@ -16,10 +18,11 @@ class SearchLogCreate(BaseModel):
 
 class SearchLogRead(OrmModel):
     id: UUID
+    user_id: UUID
+    request_id: str
     industry: str
     country: str
     state: str
     city: str
     results_count: int
     created_at: datetime
-

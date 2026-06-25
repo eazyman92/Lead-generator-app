@@ -23,4 +23,4 @@ class User(TimestampMixin, Base):
     refresh_tokens = relationship("RefreshToken", back_populates="user")
     exports = relationship("Export", back_populates="user")
     audit_logs = relationship("AuditLog", back_populates="user")
-
+    search_logs = relationship("SearchLog", back_populates="user")

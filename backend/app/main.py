@@ -6,7 +6,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
+from app.api.businesses import router as businesses_router
 from app.api.health import router as health_router
+from app.api.search import router as search_router
 from app.core.exceptions import AppError
 from app.services.logging import configure_logging, get_logger
 from app.services.settings import get_settings
@@ -65,6 +67,8 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 
 app.include_router(auth_router)
+app.include_router(search_router)
+app.include_router(businesses_router)
 app.include_router(health_router)
 
 

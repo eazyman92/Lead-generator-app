@@ -247,10 +247,16 @@ POST /api/v1/search
 
 ```json
 {
-  "industry": "gym",
-  "country": "United States",
-  "state": "Texas",
-  "city": "Houston"
+  "filters": {
+    "industry": "gym",
+    "country": "United States",
+    "state": "Texas",
+    "city": "Houston"
+  },
+  "pagination": {
+    "page": 1,
+    "per_page": 25
+  }
 }
 ```
 
@@ -262,13 +268,73 @@ POST /api/v1/search
   "data": {
     "results": [
       {
-        "business_id": "uuid",
+        "id": "uuid",
         "name": "ABC Fitness",
-        "website": "https://abcfitness.com",
+        "industry": "gym",
+        "website": "https://abcfitness.example",
         "phone": "+123456789",
-        "city": "Houston"
+        "email": "contact@abcfitness.example",
+        "country": "United States",
+        "state": "Texas",
+        "city": "Houston",
+        "address": "123 Main Street",
+        "source_type": "directory"
       }
-    ]
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 25,
+      "total": 42,
+      "total_pages": 2,
+      "has_next": true,
+      "has_previous": false
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
+
+## 4.2 Search History
+
+```
+GET /api/v1/search/history
+```
+
+### Auth Required: YES
+
+### Query Parameters
+
+* `page` - integer, minimum `1`, default `1`
+* `per_page` - integer, `1` through `100`, default `25`
+
+Returns user-scoped search history for the authenticated user.
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "history": [
+      {
+        "id": "uuid",
+        "industry": "gym",
+        "country": "United States",
+        "state": "Texas",
+        "city": "Houston",
+        "results_count": 42,
+        "created_at": "2026-06-25T00:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 25,
+      "total": 1,
+      "total_pages": 1,
+      "has_next": false,
+      "has_previous": false
+    }
   },
   "message": null,
   "request_id": "..."
@@ -287,11 +353,38 @@ GET /api/v1/businesses/{id}
 
 ### Auth Required: YES
 
-Returns:
+Returns business info with related data counts.
 
-* business info
-* contacts
-* social profiles
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "business": {
+      "id": "uuid",
+      "name": "ABC Fitness",
+      "industry": "gym",
+      "website": "https://abcfitness.example",
+      "phone": "+123456789",
+      "email": "contact@abcfitness.example",
+      "country": "United States",
+      "state": "Texas",
+      "city": "Houston",
+      "address": "123 Main Street",
+      "description": "Local fitness business.",
+      "source_type": "directory",
+      "created_at": "2026-06-25T00:00:00Z",
+      "updated_at": "2026-06-25T00:00:00Z",
+      "contacts_count": 2,
+      "sources_count": 1,
+      "social_profiles_count": 1
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
 
 ---
 
@@ -309,6 +402,46 @@ Returns:
 * roles
 * emails if publicly available
 * source URLs
+
+### Query Parameters
+
+* `page` - integer, minimum `1`, default `1`
+* `per_page` - integer, `1` through `100`, default `25`
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "business_id": "uuid",
+    "contacts": [
+      {
+        "id": "uuid",
+        "full_name": "Public Contact",
+        "role": "Support",
+        "email": "support@abcfitness.example",
+        "phone": "+123456789",
+        "linkedin_url": null,
+        "is_decision_maker": false,
+        "priority_score": 0,
+        "source_url": "https://abcfitness.example/contact",
+        "created_at": "2026-06-25T00:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 25,
+      "total": 1,
+      "total_pages": 1,
+      "has_next": false,
+      "has_previous": false
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
 
 ---
 
@@ -362,6 +495,42 @@ Returns:
 * where data came from
 * trust tier
 * confidence score
+
+### Query Parameters
+
+* `page` - integer, minimum `1`, default `1`
+* `per_page` - integer, `1` through `100`, default `25`
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "business_id": "uuid",
+    "sources": [
+      {
+        "id": "uuid",
+        "source_type": "directory",
+        "source_url": "https://directory.example/abc-fitness",
+        "trust_tier": "B",
+        "confidence_score": 80,
+        "collected_at": "2026-06-25T00:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 25,
+      "total": 1,
+      "total_pages": 1,
+      "has_next": false,
+      "has_previous": false
+    }
+  },
+  "message": null,
+  "request_id": "..."
+}
+```
 
 ---
 

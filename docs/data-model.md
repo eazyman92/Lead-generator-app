@@ -264,6 +264,10 @@ search_logs
 
 * id (UUID, PK)
 
+* user_id (UUID, FK -> users.id)
+
+* request_id (TEXT)
+
 * industry (TEXT)
 
 * country (TEXT)

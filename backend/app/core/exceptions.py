@@ -45,6 +45,24 @@ class ConflictError(AppError):
         super().__init__(409, code, message)
 
 
+class NotFoundError(AppError):
+    """Requested resource was not found."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(404, code, message)
+
+
+class RateLimitError(AppError):
+    """Request exceeded an application rate limit."""
+
+    def __init__(
+        self,
+        code: str = "RATE_LIMIT_EXCEEDED",
+        message: str = "Rate limit exceeded.",
+    ) -> None:
+        super().__init__(429, code, message)
+
+
 class ValidationAppError(AppError):
     """Application-level validation failed."""
 

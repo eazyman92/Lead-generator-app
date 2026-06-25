@@ -4,9 +4,12 @@ Project: Lead Generator App
 
 Repository: lead-generator-app
 
-Scope: Current Phase 1 database foundation.
+Scope: Current database foundation through Phase 3 remediation.
 
-Source of truth: `database/migrations/versions/20260624_0001_initial_core_schema.py`
+Source of truth:
+
+* `database/migrations/versions/20260624_0001_initial_core_schema.py`
+* `database/migrations/versions/20260625_0002_scope_search_logs_to_users.py`
 
 ## Mermaid ERD
 
@@ -16,6 +19,7 @@ erDiagram
     refresh_tokens ||--o| refresh_tokens : replaces
     users ||--o{ exports : requests
     users ||--o{ audit_logs : generates
+    users ||--o{ search_logs : submits
     businesses ||--o{ contacts : has
     businesses ||--o{ social_profiles : has
     businesses ||--o{ data_sources : traced_by
@@ -93,6 +97,8 @@ erDiagram
 
     search_logs {
         UUID id PK
+        UUID user_id FK
+        TEXT request_id
         TEXT industry
         TEXT country
         TEXT state
@@ -146,6 +152,7 @@ erDiagram
 | `contacts` | `business_id` | `businesses` | `id` | Many contacts belong to one business | `ON DELETE CASCADE` |
 | `data_sources` | `business_id` | `businesses` | `id` | Many data sources belong to one business | `ON DELETE CASCADE` |
 | `social_profiles` | `business_id` | `businesses` | `id` | Many social profiles belong to one business | `ON DELETE CASCADE` |
+| `search_logs` | `user_id` | `users` | `id` | Many search logs belong to one user | `ON DELETE CASCADE` |
 | `exports` | `user_id` | `users` | `id` | Many exports belong to one user | `ON DELETE CASCADE` |
 | `audit_logs` | `user_id` | `users` | `id` | Many audit logs may belong to one user | `ON DELETE SET NULL` |
 
@@ -409,6 +416,8 @@ Tracks search requests and result counts.
 | Column | Type | Nullable | Key |
 | --- | --- | --- | --- |
 | `id` | UUID | No | Primary key |
+| `user_id` | UUID | No | Foreign key to `users.id` |
+| `request_id` | TEXT | No |  |
 | `industry` | TEXT | No |  |
 | `country` | TEXT | No |  |
 | `state` | TEXT | No |  |
@@ -422,7 +431,11 @@ Primary key:
 | --- | --- |
 | `pk_search_logs` | `id` |
 
-Foreign keys: None.
+Foreign keys:
+
+| Constraint | Column | References | Delete behavior |
+| --- | --- | --- | --- |
+| `fk_search_logs_user_id_users` | `user_id` | `users(id)` | `ON DELETE CASCADE` |
 
 Unique constraints: None.
 
@@ -559,7 +572,7 @@ Indexes:
 | `contacts` | `ix_contacts_business_id`, `ix_contacts_is_decision_maker`, `ix_contacts_role` |
 | `social_profiles` | `ix_social_profiles_business_id` |
 | `data_sources` | `ix_data_sources_business_id` |
-| `search_logs` | None |
+| `search_logs` | `ix_search_logs_user_id`, `ix_search_logs_request_id` |
 | `exports` | `ix_exports_user_id`, `ix_exports_status` |
 | `background_jobs` | `ix_background_jobs_job_type`, `ix_background_jobs_locked_at`, `ix_background_jobs_status` |
 | `audit_logs` | `ix_audit_logs_user_id`, `ix_audit_logs_request_id`, `ix_audit_logs_event_type` |
