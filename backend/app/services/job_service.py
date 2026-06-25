@@ -31,8 +31,7 @@ class JobService:
             job,
             metadata={"idempotency_key": payload.idempotency_key},
         )
-        await self.session.commit()
-        return job
+        return await self._commit_and_refresh(job)
 
     async def claim_next_job(self, worker_id: str, context: Any) -> BackgroundJob | None:
         """Claim the next eligible job for a worker."""
@@ -44,7 +43,10 @@ class JobService:
                 job,
                 metadata={"worker_id": worker_id},
             )
-        await self.session.commit()
+        if job is not None:
+            job = await self._commit_and_refresh(job)
+        else:
+            await self.session.commit()
         return job
 
     async def complete_job(self, job_id: UUID, worker_id: str, context: Any) -> BackgroundJob:
@@ -56,8 +58,7 @@ class JobService:
             job,
             metadata={"worker_id": worker_id},
         )
-        await self.session.commit()
-        return job
+        return await self._commit_and_refresh(job)
 
     async def fail_job(
         self,
@@ -106,14 +107,18 @@ class JobService:
                     "max_attempts": job.max_attempts,
                 },
             )
-        await self.session.commit()
-        return job
+        return await self._commit_and_refresh(job)
 
     async def get_job(self, job_id: UUID, context: Any) -> BackgroundJob:
         """Return a job by id."""
         job = await self.jobs._get_existing(job_id)
         await self._audit("background_job_status_viewed", context, job, metadata={})
+        return await self._commit_and_refresh(job)
+
+    async def _commit_and_refresh(self, job: BackgroundJob) -> BackgroundJob:
+        """Commit changes and reload server-managed fields before API serialization."""
         await self.session.commit()
+        await self.session.refresh(job)
         return job
 
     async def _audit(

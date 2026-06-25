@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.schemas.background_job import InternalJobCreateRequest, empty_payload_envelope
+from app.schemas.background_job import (
+    InternalJobCreateRequest,
+    InternalJobStatusResponse,
+    empty_payload_envelope,
+)
 from app.services.job_service import JobService
 
 
@@ -31,9 +35,14 @@ def build_job(status: str = "pending"):
 class FakeSession:
     def __init__(self) -> None:
         self.committed = False
+        self.refresh_count = 0
 
     async def commit(self):
         self.committed = True
+
+    async def refresh(self, instance):
+        self.refresh_count += 1
+        instance.updated_at = datetime.now(timezone.utc)
 
 
 class FakeJobRepository:
@@ -84,7 +93,7 @@ def build_service() -> tuple[JobService, FakeSession, FakeAuditRepository]:
     return service, session, audit_logs
 
 
-def test_job_service_audits_create_claim_and_complete() -> None:
+def test_job_service_refreshes_create_claim_complete_before_serialization() -> None:
     service, session, audit_logs = build_service()
     context = SimpleNamespace(request_id="request-1", ip_address="127.0.0.1")
     payload = InternalJobCreateRequest(
@@ -99,6 +108,10 @@ def test_job_service_audits_create_claim_and_complete() -> None:
 
     assert created.id == claimed.id == completed.id
     assert session.committed is True
+    assert session.refresh_count == 3
+    serialized = InternalJobStatusResponse.from_job(completed).model_dump(mode="json")
+    assert serialized["status"] == "completed"
+    assert serialized["updated_at"] is not None
     assert [event["event_type"] for event in audit_logs.events] == [
         "background_job_created",
         "background_job_claimed",

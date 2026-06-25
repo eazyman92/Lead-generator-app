@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.internal import get_job_service
 from app.main import app
+from app.services.settings import get_settings
 
 
 def build_job(status: str = "pending"):
@@ -85,7 +86,8 @@ class FakeJobService:
         return self.job
 
 
-def internal_headers(token: str = "test-internal-token") -> dict[str, str]:
+def internal_headers(token: str | None = None) -> dict[str, str]:
+    token = token or get_settings().internal_api_token
     return {
         "X-Internal-API-Token": token,
         "X-Request-ID": "request-1",
