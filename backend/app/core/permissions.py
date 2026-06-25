@@ -7,7 +7,7 @@ from app.core.exceptions import AuthorizationError
 class RoleBearingUser(Protocol):
     role: str
 
-SUPPORTED_ROLES = {"admin", "user"}
+SUPPORTED_ROLES = {"admin", "user", "system_worker"}
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {
         "auth:me",
@@ -35,6 +35,13 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "search:history",
         "source:read",
         "user:read",
+    },
+    "system_worker": {
+        "internal:job_create",
+        "internal:job_claim",
+        "internal:job_complete",
+        "internal:job_fail",
+        "internal:job_read",
     },
 }
 
