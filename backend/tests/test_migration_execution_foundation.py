@@ -1,3 +1,4 @@
+import configparser
 from pathlib import Path
 
 
@@ -27,3 +28,16 @@ def test_alembic_env_uses_async_database_url_driver() -> None:
     assert "return database_url" in env_py
     assert "replace(\"+asyncpg\", \"\")" not in env_py
     assert "await connection.run_sync(do_run_migrations)" in env_py
+
+
+def test_alembic_ini_does_not_interpolate_environment_variables() -> None:
+    alembic_ini = Path("alembic.ini")
+    content = alembic_ini.read_text(encoding="utf-8")
+
+    assert "%(DATABASE_URL)s" not in content
+    assert "sqlalchemy.url =" in content
+
+    parser = configparser.ConfigParser()
+    parser.read(alembic_ini)
+
+    assert parser.get("alembic", "sqlalchemy.url") == ""
