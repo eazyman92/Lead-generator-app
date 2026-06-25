@@ -355,6 +355,15 @@ These indexes enforce the documented deduplication order without requiring new c
 * (business_id)
 * unique `(business_id, source_url)`
 
+When the Phase 4A migration adds `uq_data_sources_business_source_url`, any pre-existing duplicate `data_sources` rows for the same `(business_id, source_url)` must be resolved deterministically before the constraint is created. The canonical row is selected by:
+
+* highest trust tier: A, then B, then C, then D
+* highest `confidence_score`
+* earliest `collected_at`
+* lowest `id` text value
+
+Rows not selected as canonical duplicates are removed before the unique constraint is applied.
+
 ## refresh_tokens
 
 * (user_id)
