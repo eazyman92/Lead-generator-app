@@ -87,6 +87,7 @@ class BusinessSearchResult(OrmModel):
 class BusinessSearchData(BaseModel):
     results: list[BusinessSearchResult]
     pagination: PaginationResponse
+    job: dict[str, str] | None = None
 
 
 class SearchHistoryItem(OrmModel):

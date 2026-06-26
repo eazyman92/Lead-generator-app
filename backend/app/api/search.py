@@ -37,6 +37,7 @@ async def search_businesses(
     data = BusinessSearchData(
         results=[BusinessSearchResult.model_validate(business) for business in result.businesses],
         pagination=result.pagination,
+        job={"id": result.job_id, "type": "contact_collection"} if result.job_id else None,
     )
     return context_success_response(data.model_dump(mode="json"), context)
 

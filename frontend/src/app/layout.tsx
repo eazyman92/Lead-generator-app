@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
+import { AppProviders } from "@/app/providers";
 
 export const metadata: Metadata = {
   title: "Lead Generator App",
-  description: "Lead Generator App foundation"
+  description: "Production search dashboard for lead generation"
 };
 
 export default function RootLayout({
@@ -12,9 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className="dark">
+      <body>
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }
-

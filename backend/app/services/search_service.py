@@ -18,6 +18,7 @@ from app.schemas.search import BusinessSearchRequest, PaginationRequest, Paginat
 class SearchResults:
     businesses: list[Business]
     pagination: PaginationResponse
+    job_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,7 @@ class SearchService:
                 per_page=pagination.per_page,
                 total=total,
             ),
+            job_id=str(job.id),
         )
 
     async def history(

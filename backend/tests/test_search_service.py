@@ -104,8 +104,6 @@ def test_search_service_logs_search_and_audit_event() -> None:
 
     assert service.businesses.search_calls == [
         {
-            "user_id": user.id,
-            "request_id": "request-1",
             "industry": "Gym",
             "country": "United States",
             "state": "Texas",
@@ -116,6 +114,8 @@ def test_search_service_logs_search_and_audit_event() -> None:
     ]
     assert service.search_logs.created == [
         {
+            "user_id": user.id,
+            "request_id": "request-1",
             "industry": "Gym",
             "country": "United States",
             "state": "Texas",
@@ -130,12 +130,13 @@ def test_search_service_logs_search_and_audit_event() -> None:
     assert job_payload["data"]["country"] == "United States"
     assert job_payload["data"]["state"] == "Texas"
     assert job_payload["data"]["city"] == "Houston"
-    assert job_payload["data"]["limit"] == 25
+    assert job_payload["data"]["limit"] == 10
     assert job_payload["data"]["user_id"] == str(user.id)
     assert job_payload["data"]["idempotency_key"] == job_payload["idempotency_key"]
     assert service.audit_logs.events[0]["event_type"] == "business_search"
     assert service.audit_logs.events[0]["user_id"] == user.id
     assert service.audit_logs.events[0]["metadata"]["results_count"] == 2
+    assert result.job_id is not None
     assert result.pagination.page == 2
     assert service.session.committed is True
 
