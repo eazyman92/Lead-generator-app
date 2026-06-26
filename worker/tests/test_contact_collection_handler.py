@@ -78,7 +78,11 @@ class FakeRepository:
 
 
 class FakeProvider:
+    def __init__(self):
+        self.seen_payload = None
+
     async def search(self, payload):
+        self.seen_payload = payload
         return [
             RawBusiness(
                 name="Example Gym",
@@ -126,6 +130,7 @@ def test_contact_collection_service_persists_business_contact_source_and_progres
         },
     }
     repository = FakeRepository(payload)
+    provider = FakeProvider()
     service = ContactCollectionService(
         SimpleNamespace(
             contact_collection_max_limit=50,
@@ -133,11 +138,13 @@ def test_contact_collection_service_persists_business_contact_source_and_progres
             worker_http_timeout_seconds=1,
         ),
         repository,
-        FakeProvider(),
+        provider,
     )
 
     progress = asyncio.run(service.run(build_job()))
 
+    assert provider.seen_payload["query"] == "gym"
+    assert provider.seen_payload["location"] == "Houston"
     assert progress.businesses_processed == 1
     assert progress.contacts_saved == 1
     assert repository.businesses[0].name == "Example Gym"

@@ -127,6 +127,12 @@ def test_search_service_logs_search_and_audit_event() -> None:
     job_payload = service.background_jobs.created[0]["payload"]
     assert job_payload["data"]["query"] == "Gym"
     assert job_payload["data"]["location"] == "Houston, Texas, United States"
+    assert job_payload["data"]["country"] == "United States"
+    assert job_payload["data"]["state"] == "Texas"
+    assert job_payload["data"]["city"] == "Houston"
+    assert job_payload["data"]["limit"] == 25
+    assert job_payload["data"]["user_id"] == str(user.id)
+    assert job_payload["data"]["idempotency_key"] == job_payload["idempotency_key"]
     assert service.audit_logs.events[0]["event_type"] == "business_search"
     assert service.audit_logs.events[0]["user_id"] == user.id
     assert service.audit_logs.events[0]["metadata"]["results_count"] == 2

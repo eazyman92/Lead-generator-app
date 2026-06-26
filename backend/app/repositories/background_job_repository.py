@@ -32,12 +32,18 @@ class BackgroundJobRepository(BaseRepository[BackgroundJob]):
         max_attempts: int = 3,
     ) -> BackgroundJob:
         """Create an idempotent pending job or return the active duplicate."""
-        self._validate_payload_envelope(payload)
+        self._validate_payload_envelope(job_type, payload)
         existing = await self.get_active_by_idempotency_key(
             job_type,
             payload["idempotency_key"],
         )
         if existing is not None:
+            if job_type == "contact_collection" and self._needs_payload_repair(
+                existing.payload,
+                payload,
+            ):
+                existing.payload = payload
+                await self.session.flush()
             return existing
 
         try:
@@ -245,7 +251,7 @@ class BackgroundJobRepository(BaseRepository[BackgroundJob]):
         if job.status == "running" and job.locked_by != worker_id:
             raise ConflictError("JOB_LOCKED_BY_OTHER_WORKER", "Job is locked by another worker.")
 
-    def _validate_payload_envelope(self, payload: dict[str, Any]) -> None:
+    def _validate_payload_envelope(self, job_type: str, payload: dict[str, Any]) -> None:
         required_fields = {
             "schema_version",
             "request_id",
@@ -266,6 +272,28 @@ class BackgroundJobRepository(BaseRepository[BackgroundJob]):
                 "INVALID_PAYLOAD",
                 "Job payload envelope is missing required fields.",
             )
+        if job_type == "contact_collection" and not self._has_contact_collection_data(payload):
+            raise ValidationAppError(
+                "INVALID_PAYLOAD",
+                "Contact collection job payload data is required.",
+            )
+
+    def _needs_payload_repair(
+        self,
+        existing_payload: dict[str, Any] | None,
+        incoming_payload: dict[str, Any],
+    ) -> bool:
+        existing_data = (existing_payload or {}).get("data")
+        incoming_data = incoming_payload.get("data")
+        return not bool(existing_data) and bool(incoming_data)
+
+    def _has_contact_collection_data(self, payload: dict[str, Any]) -> bool:
+        data = payload.get("data")
+        if not isinstance(data, dict) or not data:
+            return False
+        if data.get("businesses"):
+            return True
+        return all(data.get(field) for field in ("query", "location", "category"))
 
 
 def sanitize_error_message(message: str) -> str:

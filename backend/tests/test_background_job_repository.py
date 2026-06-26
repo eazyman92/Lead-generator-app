@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, ValidationAppError
 from app.models import BackgroundJob
 from app.repositories.background_job_repository import BackgroundJobRepository
 from app.schemas.background_job import empty_payload_envelope
@@ -132,6 +132,79 @@ def test_create_job_adds_valid_payload_envelope() -> None:
     assert result.payload["schema_version"] == 1
     assert result.payload["idempotency_key"] == "expired_refresh_token_cleanup:daily"
     assert session.flushed is True
+
+
+def test_create_contact_collection_job_preserves_payload_data() -> None:
+    session = FakeSession()
+    repository = BackgroundJobRepository(session)
+    user_id = uuid4()
+    payload = empty_payload_envelope(
+        request_id="request-2",
+        idempotency_key="contact_collection:search:test",
+        created_by_user_id=user_id,
+        data={
+            "search_id": "request-2",
+            "query": "restaurants",
+            "location": "Ikeja, Lagos, Nigeria",
+            "country": "Nigeria",
+            "state": "Lagos",
+            "city": "Ikeja",
+            "category": "restaurants",
+            "limit": 20,
+            "user_id": str(user_id),
+            "idempotency_key": "contact_collection:search:test",
+        },
+    )
+
+    result = asyncio.run(repository.create_job("contact_collection", payload))
+
+    assert result.payload["data"]["query"] == "restaurants"
+    assert result.payload["data"]["location"] == "Ikeja, Lagos, Nigeria"
+    assert result.payload["data"]["user_id"] == str(user_id)
+
+
+def test_create_contact_collection_job_rejects_empty_payload_data() -> None:
+    session = FakeSession()
+    repository = BackgroundJobRepository(session)
+    payload = empty_payload_envelope(
+        request_id="request-2",
+        idempotency_key="contact_collection:search:test",
+        data={},
+    )
+
+    with pytest.raises(ValidationAppError):
+        asyncio.run(repository.create_job("contact_collection", payload))
+
+
+def test_create_job_repairs_active_duplicate_with_empty_payload_data() -> None:
+    session = FakeSession()
+    repository = BackgroundJobRepository(session)
+    duplicate = build_job(status="pending")
+    duplicate.payload = empty_payload_envelope(
+        request_id="request-old",
+        idempotency_key="contact_collection:search:test",
+        data={},
+    )
+    session.active_duplicate = duplicate
+    payload = empty_payload_envelope(
+        request_id="request-new",
+        idempotency_key="contact_collection:search:test",
+        data={
+            "search_id": "request-new",
+            "query": "restaurants",
+            "location": "Ikeja, Lagos, Nigeria",
+            "category": "restaurants",
+        },
+    )
+
+    result = asyncio.run(repository.create_job("contact_collection", payload))
+
+    assert result is duplicate
+    assert session.added == []
+    assert session.flushed is True
+    assert duplicate.payload["request_id"] == "request-new"
+    assert duplicate.payload["data"]["query"] == "restaurants"
+    assert duplicate.payload["data"]["location"] == "Ikeja, Lagos, Nigeria"
 
 
 def test_claim_next_uses_postgresql_skip_locked_and_claims_once() -> None:
