@@ -15,3 +15,13 @@ def test_health_endpoint() -> None:
     assert response.status_code == 200
     assert response.json() == {"status": "healthy"}
 
+
+def test_heartbeat_endpoint_returns_worker_metadata() -> None:
+    client = TestClient(app)
+
+    response = client.get("/heartbeat")
+
+    assert response.status_code == 200
+    assert response.json()["worker_id"] == "test-worker"
+    assert response.json()["version"] == "test-version"
+    assert response.json()["health"] == "healthy"

@@ -15,6 +15,10 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "unknown"),
         }
+        for key in ("job_id", "job_type", "worker_id", "duration_seconds"):
+            value = getattr(record, key, None)
+            if value is not None:
+                payload[key] = value
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
@@ -34,4 +38,3 @@ def configure_logging() -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
-
