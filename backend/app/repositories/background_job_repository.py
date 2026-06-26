@@ -82,6 +82,23 @@ class BackgroundJobRepository(BaseRepository[BackgroundJob]):
         )
         return await self.session.scalar(statement)
 
+    async def get_latest_by_idempotency_key(
+        self,
+        job_type: str,
+        idempotency_key: str,
+    ) -> BackgroundJob | None:
+        """Return the newest job with the same idempotency key regardless of status."""
+        statement = (
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.job_type == job_type,
+                BackgroundJob.payload["idempotency_key"].astext == idempotency_key,
+            )
+            .order_by(BackgroundJob.created_at.desc(), BackgroundJob.id.desc())
+            .limit(1)
+        )
+        return await self.session.scalar(statement)
+
     async def list_eligible_pending(self, limit: int = 100) -> list[BackgroundJob]:
         """List pending jobs whose retry delay has elapsed."""
         statement = (

@@ -2,13 +2,19 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Search } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Combobox } from "@/components/ui/combobox";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  countries,
+  getCountry,
+  getState,
+  industryOptions
+} from "@/data/search-options";
 import {
   searchFormSchema,
   type SearchFormValues
@@ -34,6 +40,26 @@ export function SearchForm({ isSearching, onSubmit }: Props) {
       perPage: 20
     }
   });
+  const selectedCountry = form.watch("country");
+  const selectedState = form.watch("state");
+  const country = getCountry(selectedCountry);
+  const state = getState(selectedCountry, selectedState);
+  const countryOptions = countries.map((item) => ({
+    label: item.name,
+    value: item.name,
+    meta: `${item.iso2} / ${item.iso3}`
+  }));
+  const stateOptions =
+    country?.states.map((item) => ({
+      label: item.name,
+      value: item.name,
+      meta: item.code
+    })) ?? [];
+  const cityOptions =
+    state?.cities.map((item) => ({
+      label: item.name,
+      value: item.name
+    })) ?? [];
 
   return (
     <form
@@ -41,16 +67,81 @@ export function SearchForm({ isSearching, onSubmit }: Props) {
       onSubmit={form.handleSubmit(onSubmit)}
     >
       <Field label="Industry" error={form.formState.errors.industry?.message}>
-        <Input placeholder="Restaurants" {...form.register("industry")} />
+        <Controller
+          control={form.control}
+          name="industry"
+          render={({ field }) => (
+            <Combobox
+              options={industryOptions.map((industry) => ({
+                label: industry,
+                value: industry
+              }))}
+              value={field.value}
+              placeholder="Choose industry"
+              onChange={field.onChange}
+            />
+          )}
+        />
       </Field>
       <Field label="Country" error={form.formState.errors.country?.message}>
-        <Input placeholder="Nigeria" {...form.register("country")} />
+        <Controller
+          control={form.control}
+          name="country"
+          render={({ field }) => (
+            <Combobox
+              options={countryOptions}
+              value={field.value}
+              placeholder="Choose country"
+              onChange={(value) => {
+                field.onChange(value);
+                const nextCountry = getCountry(value);
+                const nextState = nextCountry?.states[0];
+                form.setValue("state", nextState?.name ?? "", {
+                  shouldValidate: true
+                });
+                form.setValue("city", nextState?.cities[0]?.name ?? "", {
+                  shouldValidate: true
+                });
+              }}
+            />
+          )}
+        />
       </Field>
       <Field label="State" error={form.formState.errors.state?.message}>
-        <Input placeholder="Lagos" {...form.register("state")} />
+        <Controller
+          control={form.control}
+          name="state"
+          render={({ field }) => (
+            <Combobox
+              options={stateOptions}
+              value={field.value}
+              placeholder="Choose state"
+              disabled={!country}
+              onChange={(value) => {
+                field.onChange(value);
+                const nextState = getState(selectedCountry, value);
+                form.setValue("city", nextState?.cities[0]?.name ?? "", {
+                  shouldValidate: true
+                });
+              }}
+            />
+          )}
+        />
       </Field>
       <Field label="City" error={form.formState.errors.city?.message}>
-        <Input placeholder="Ikeja" {...form.register("city")} />
+        <Controller
+          control={form.control}
+          name="city"
+          render={({ field }) => (
+            <Combobox
+              options={cityOptions}
+              value={field.value}
+              placeholder="Choose city"
+              disabled={!state}
+              onChange={field.onChange}
+            />
+          )}
+        />
       </Field>
       <Field label="Results" error={form.formState.errors.perPage?.message}>
         <Select {...form.register("perPage")}>

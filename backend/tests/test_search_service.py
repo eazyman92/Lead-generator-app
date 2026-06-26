@@ -22,11 +22,12 @@ class FakeSession:
 
 
 class FakeBusinessRepository:
-    def __init__(self) -> None:
+    def __init__(self, total: int = 2) -> None:
+        self.total = total
         self.search_calls = []
 
     async def count_search(self, industry, country, state, city):
-        return 2
+        return self.total
 
     async def search(self, industry, country, state, city, limit, offset):
         self.search_calls.append(
@@ -67,8 +68,14 @@ class FakeAuditLogRepository:
 
 
 class FakeBackgroundJobRepository:
-    def __init__(self) -> None:
+    def __init__(self, latest_status=None) -> None:
         self.created = []
+        self.latest_status = latest_status
+
+    async def get_latest_by_idempotency_key(self, job_type, idempotency_key):
+        if self.latest_status is None:
+            return None
+        return SimpleNamespace(status=self.latest_status)
 
     async def create_job(self, job_type, payload, max_attempts=3):
         self.created.append(
@@ -81,7 +88,7 @@ class FakeBackgroundJobRepository:
         return SimpleNamespace(id=uuid4(), job_type=job_type)
 
 
-def test_search_service_logs_search_and_audit_event() -> None:
+def test_search_service_returns_persisted_results_without_queueing_duplicate_job() -> None:
     service = SearchService.__new__(SearchService)
     service.session = FakeSession()
     service.businesses = FakeBusinessRepository()
@@ -123,6 +130,36 @@ def test_search_service_logs_search_and_audit_event() -> None:
             "results_count": 2,
         }
     ]
+    assert service.background_jobs.created == []
+    assert service.audit_logs.events[0]["event_type"] == "business_search"
+    assert service.audit_logs.events[0]["user_id"] == user.id
+    assert service.audit_logs.events[0]["metadata"]["results_count"] == 2
+    assert result.job_id is None
+    assert result.pagination.page == 2
+    assert service.session.committed is True
+
+
+def test_search_service_queues_collection_when_no_persisted_results_exist() -> None:
+    service = SearchService.__new__(SearchService)
+    service.session = FakeSession()
+    service.businesses = FakeBusinessRepository(total=0)
+    service.search_logs = FakeSearchLogRepository()
+    service.background_jobs = FakeBackgroundJobRepository()
+    service.audit_logs = FakeAuditLogRepository()
+    user = FakeUser(id=uuid4())
+    context = SimpleNamespace(request_id="request-1", ip_address="127.0.0.1")
+    payload = BusinessSearchRequest(
+        filters={
+            "industry": " Gym ",
+            "country": " United States ",
+            "state": " Texas ",
+            "city": " Houston ",
+        },
+        pagination={"page": 2, "per_page": 10},
+    )
+
+    result = asyncio.run(service.search(payload, user, context))
+
     assert service.background_jobs.created[0]["job_type"] == "contact_collection"
     job_payload = service.background_jobs.created[0]["payload"]
     assert job_payload["data"]["query"] == "Gym"
@@ -133,12 +170,35 @@ def test_search_service_logs_search_and_audit_event() -> None:
     assert job_payload["data"]["limit"] == 10
     assert job_payload["data"]["user_id"] == str(user.id)
     assert job_payload["data"]["idempotency_key"] == job_payload["idempotency_key"]
-    assert service.audit_logs.events[0]["event_type"] == "business_search"
-    assert service.audit_logs.events[0]["user_id"] == user.id
-    assert service.audit_logs.events[0]["metadata"]["results_count"] == 2
+    assert service.audit_logs.events[1]["event_type"] == "background_job_created"
     assert result.job_id is not None
     assert result.pagination.page == 2
     assert service.session.committed is True
+
+
+def test_search_service_does_not_requeue_completed_empty_collection() -> None:
+    service = SearchService.__new__(SearchService)
+    service.session = FakeSession()
+    service.businesses = FakeBusinessRepository(total=0)
+    service.search_logs = FakeSearchLogRepository()
+    service.background_jobs = FakeBackgroundJobRepository(latest_status="completed")
+    service.audit_logs = FakeAuditLogRepository()
+    user = FakeUser(id=uuid4())
+    context = SimpleNamespace(request_id="request-3", ip_address="127.0.0.1")
+    payload = BusinessSearchRequest(
+        filters={
+            "industry": "Restaurants",
+            "country": "Nigeria",
+            "state": "Lagos",
+            "city": "Ikeja",
+        }
+    )
+
+    result = asyncio.run(service.search(payload, user, context))
+
+    assert service.background_jobs.created == []
+    assert result.job_id is None
+    assert result.pagination.total == 0
 
 
 def test_search_history_audits_view() -> None:

@@ -34,7 +34,7 @@ export function ResultsTable({
       <div className="rounded-lg border border-dashed border-border p-8 text-center">
         <p className="text-sm font-medium">No businesses yet</p>
         <p className="mt-1 text-sm text-mutedForeground">
-          Run a search to populate this workspace with matching businesses.
+          Launch a collection job. Completed worker results will appear here.
         </p>
       </div>
     );
@@ -52,9 +52,7 @@ export function ResultsTable({
                 "Phone",
                 "Email",
                 "Website",
-                "Country",
-                "State",
-                "City",
+                "Address",
                 "Source",
                 "Actions"
               ].map((heading) => (
@@ -74,8 +72,8 @@ export function ResultsTable({
                 <td className="px-4 py-3 text-mutedForeground">
                   {business.industry}
                 </td>
-                <td className="px-4 py-3">{business.phone || "—"}</td>
-                <td className="px-4 py-3">{business.email ?? "—"}</td>
+                <td className="px-4 py-3">{business.phone || "-"}</td>
+                <td className="px-4 py-3">{business.email ?? "-"}</td>
                 <td className="px-4 py-3">
                   {business.website ? (
                     <a
@@ -88,12 +86,10 @@ export function ResultsTable({
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : (
-                    "—"
+                    "-"
                   )}
                 </td>
-                <td className="px-4 py-3">{business.country}</td>
-                <td className="px-4 py-3">{business.state}</td>
-                <td className="px-4 py-3">{business.city}</td>
+                <td className="px-4 py-3">{business.address}</td>
                 <td className="px-4 py-3">{business.source_type}</td>
                 <td className="px-4 py-3">
                   <Button
@@ -114,7 +110,7 @@ export function ResultsTable({
       {pagination ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-mutedForeground">
-            Page {pagination.page} of {pagination.total_pages || 1} ·{" "}
+            Page {pagination.page} of {pagination.total_pages || 1} -{" "}
             {pagination.total} results
           </p>
           <div className="flex gap-2">

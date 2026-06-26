@@ -72,30 +72,40 @@ class SearchService:
                 "results_count": total,
             }
         )
+        job_id: str | None = None
         idempotency_key = (
             "contact_collection:search:"
             f"{user.id}:{filters.industry}:{filters.country}:{filters.state}:{filters.city}"
         ).lower()
-        job = await self.background_jobs.create_job(
+        latest_job = await self.background_jobs.get_latest_by_idempotency_key(
             "contact_collection",
-            empty_payload_envelope(
-                request_id=context.request_id,
-                idempotency_key=idempotency_key,
-                created_by_user_id=user.id,
-                data={
-                    "search_id": context.request_id,
-                    "query": filters.industry,
-                    "category": filters.industry,
-                    "location": f"{filters.city}, {filters.state}, {filters.country}",
-                    "country": filters.country,
-                    "state": filters.state,
-                    "city": filters.city,
-                    "limit": pagination.per_page,
-                    "user_id": str(user.id),
-                    "idempotency_key": idempotency_key,
-                },
-            ),
+            idempotency_key,
         )
+        should_enqueue_collection = total == 0 and (
+            latest_job is None or latest_job.status != "completed"
+        )
+        if should_enqueue_collection:
+            job = await self.background_jobs.create_job(
+                "contact_collection",
+                empty_payload_envelope(
+                    request_id=context.request_id,
+                    idempotency_key=idempotency_key,
+                    created_by_user_id=user.id,
+                    data={
+                        "search_id": context.request_id,
+                        "query": filters.industry,
+                        "category": filters.industry,
+                        "location": f"{filters.city}, {filters.state}, {filters.country}",
+                        "country": filters.country,
+                        "state": filters.state,
+                        "city": filters.city,
+                        "limit": pagination.per_page,
+                        "user_id": str(user.id),
+                        "idempotency_key": idempotency_key,
+                    },
+                ),
+            )
+            job_id = str(job.id)
         await self._audit(
             "business_search",
             user,
@@ -110,16 +120,17 @@ class SearchService:
                 "results_count": total,
             },
         )
-        await self._audit(
-            "background_job_created",
-            user,
-            context,
-            {
-                "job_id": str(job.id),
-                "job_type": job.job_type,
-                "idempotency_key": idempotency_key,
-            },
-        )
+        if job_id is not None:
+            await self._audit(
+                "background_job_created",
+                user,
+                context,
+                {
+                    "job_id": job_id,
+                    "job_type": "contact_collection",
+                    "idempotency_key": idempotency_key,
+                },
+            )
         await self.session.commit()
 
         return SearchResults(
@@ -129,7 +140,7 @@ class SearchService:
                 per_page=pagination.per_page,
                 total=total,
             ),
-            job_id=str(job.id),
+            job_id=job_id,
         )
 
     async def history(

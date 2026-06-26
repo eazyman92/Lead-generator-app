@@ -47,6 +47,7 @@ export function SearchWorkspace() {
   const [jobStatusMessage, setJobStatusMessage] = useState<
     string | undefined
   >();
+  const [refreshedJobId, setRefreshedJobId] = useState<string | null>(null);
 
   const jobId = searchData?.job?.id;
   const jobStatusQuery = useQuery({
@@ -68,6 +69,7 @@ export function SearchWorkspace() {
     onMutate: () => {
       setJobStage("created");
       setJobStatusMessage("Background contact collection job queued.");
+      setRefreshedJobId(null);
       toast.info("Search started.");
     },
     onSuccess: (data) => {
@@ -84,12 +86,29 @@ export function SearchWorkspace() {
       toast.error(userFriendlyError(error));
     }
   });
+  const refreshResultsMutation = useMutation({
+    mutationFn: (payload: SearchPayload) => searchBusinesses(payload),
+    onSuccess: (data) => {
+      setSearchData(data);
+      setJobStage("completed");
+      setJobStatusMessage("Contact collection completed. Results refreshed.");
+      toast.success("Collected businesses are ready.");
+    },
+    onError: (error) => {
+      setJobStatusMessage(userFriendlyError(error));
+      toast.error(userFriendlyError(error));
+    }
+  });
 
   const jobStatus = jobStatusQuery.data;
   useEffect(() => {
     if (jobStatus?.status === "completed") {
       setJobStage("completed");
       setJobStatusMessage("Contact collection completed.");
+      if (lastValues && jobId && refreshedJobId !== jobId) {
+        setRefreshedJobId(jobId);
+        refreshResultsMutation.mutate(buildPayload(lastValues, page));
+      }
     }
     if (jobStatus?.status === "failed") {
       setJobStage("failed");
@@ -100,7 +119,15 @@ export function SearchWorkspace() {
     if (jobStatusQuery.error) {
       setJobStatusMessage(userFriendlyError(jobStatusQuery.error));
     }
-  }, [jobStatus, jobStatusQuery.error]);
+  }, [
+    jobId,
+    jobStatus,
+    jobStatusQuery.error,
+    lastValues,
+    page,
+    refreshedJobId,
+    refreshResultsMutation
+  ]);
 
   function submit(values: SearchFormValues) {
     setLastValues(values);
@@ -125,9 +152,9 @@ export function SearchWorkspace() {
         className="grid gap-4 lg:grid-cols-3"
       >
         {[
-          { label: "Search-ready", value: "V1 API", icon: Search },
-          { label: "Secure", value: "Cookie Auth", icon: ShieldCheck },
-          { label: "Pipeline", value: "Worker Jobs", icon: Database }
+          { label: "Workflow", value: "Search to Leads", icon: Search },
+          { label: "Security", value: "Protected Session", icon: ShieldCheck },
+          { label: "Collection", value: "Worker Pipeline", icon: Database }
         ].map((item) => (
           <Card key={item.label} className="bg-card/70">
             <CardContent className="flex items-center justify-between">
@@ -147,9 +174,15 @@ export function SearchWorkspace() {
             <div>
               <p className="flex items-center gap-2 text-sm text-primary">
                 <Sparkles className="h-4 w-4" />
-                Lead discovery workspace
+                Live acquisition workspace
               </p>
-              <h2 className="mt-1 text-2xl font-semibold">Search businesses</h2>
+              <h2 className="mt-1 text-2xl font-semibold">
+                Build a verified business list
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-mutedForeground">
+                Choose an industry and location, launch collection, and review
+                businesses saved by the worker as soon as processing completes.
+              </p>
             </div>
             <JobStatusPanel
               stage={jobStage}
@@ -166,12 +199,9 @@ export function SearchWorkspace() {
           <ResultsTable
             results={searchData?.results ?? []}
             pagination={searchData?.pagination}
-            isLoading={searchMutation.isPending}
+            isLoading={searchMutation.isPending || refreshResultsMutation.isPending}
             onPageChange={changePage}
           />
-          <p className="text-xs text-mutedForeground">
-            Current page state: {page}
-          </p>
         </CardContent>
       </Card>
     </div>

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   Building2,
+  CheckCircle2,
   ChevronRight,
   LogOut,
   Menu,
@@ -13,7 +14,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,15 +28,16 @@ import {
 import { cn } from "@/utils/cn";
 
 const navItems = [
-  { label: "Search", icon: Search, active: true },
-  { label: "Businesses", icon: Building2, active: false },
-  { label: "Reports", icon: BarChart3, active: false },
-  { label: "Security", icon: ShieldCheck, active: false },
-  { label: "Settings", icon: Settings, active: false }
+  { label: "Search", icon: Search, active: true, enabled: true },
+  { label: "Businesses", icon: Building2, active: false, enabled: false },
+  { label: "Reports", icon: BarChart3, active: false, enabled: false },
+  { label: "Security", icon: ShieldCheck, active: false, enabled: false },
+  { label: "Settings", icon: Settings, active: false, enabled: false }
 ];
 
 export function DashboardShell() {
   const router = useRouter();
+  const [profileOpen, setProfileOpen] = useState(false);
   const {
     data: user,
     isLoading,
@@ -82,8 +84,8 @@ export function DashboardShell() {
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm text-mutedForeground">Lead Generator</p>
-              <h1 className="font-semibold">Search OS</h1>
+              <p className="text-sm text-mutedForeground">Lead Generator App</p>
+              <h1 className="font-semibold">Acquisition Console</h1>
             </div>
           </div>
 
@@ -93,12 +95,15 @@ export function DashboardShell() {
               return (
                 <button
                   key={item.label}
+                  disabled={!item.enabled}
                   className={cn(
                     "flex h-10 w-full items-center justify-between rounded-md px-3 text-sm",
                     "transition",
                     item.active
                       ? "bg-secondary text-foreground"
-                      : "text-mutedForeground hover:bg-secondary hover:text-foreground"
+                      : item.enabled
+                        ? "text-mutedForeground hover:bg-secondary hover:text-foreground"
+                        : "cursor-not-allowed text-mutedForeground/45"
                   )}
                   type="button"
                 >
@@ -107,6 +112,11 @@ export function DashboardShell() {
                     {item.label}
                   </span>
                   {item.active ? <ChevronRight className="h-4 w-4" /> : null}
+                  {!item.enabled ? (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                      Soon
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -127,30 +137,52 @@ export function DashboardShell() {
                 </Button>
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-mutedForeground">
-                    Phase 5A
+                    Phase 5B
                   </p>
                   <h2 className="text-base font-semibold">
-                    Production Search Dashboard
+                    Production Search Experience
                   </h2>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="hidden text-right sm:block">
-                  <p className="text-sm font-medium">{user.email}</p>
-                  <p className="text-xs text-mutedForeground">{user.role}</p>
+                <div className="hidden items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs text-mutedForeground sm:flex">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                  Secure session
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    await logout();
-                    toast.success("Signed out.");
-                    router.replace("/login");
-                  }}
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </Button>
+                <div className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProfileOpen((current) => !current)}
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primaryForeground">
+                      {user.email.slice(0, 1).toUpperCase()}
+                    </span>
+                    Account
+                  </Button>
+                  {profileOpen ? (
+                    <div className="absolute right-0 z-30 mt-2 w-72 rounded-md border border-border bg-card p-3 shadow-xl">
+                      <div className="border-b border-border pb-3">
+                        <p className="text-sm font-medium">{user.email}</p>
+                        <p className="mt-1 text-xs text-mutedForeground">
+                          {user.role} account - cookie-authenticated
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        className="mt-3 w-full justify-start"
+                        onClick={async () => {
+                          await logout();
+                          toast.success("Signed out.");
+                          router.replace("/login");
+                        }}
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign out
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </header>
