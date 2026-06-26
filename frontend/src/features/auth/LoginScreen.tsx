@@ -3,8 +3,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { LockKeyhole, Mail, Sparkles } from "lucide-react";
+import { LockKeyhole, Mail, Sparkles, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -13,12 +14,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { login, userFriendlyError } from "@/services/api-client";
+import { login, register, userFriendlyError } from "@/services/api-client";
 import { cn } from "@/utils/cn";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
-  password: z.string().min(12, "Password must be at least 12 characters.")
+  password: z
+    .string()
+    .min(12, "Password must be at least 12 characters.")
+    .regex(/[A-Z]/, "Password must include an uppercase letter.")
+    .regex(/[a-z]/, "Password must include a lowercase letter.")
+    .regex(/[0-9]/, "Password must include a number.")
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -26,6 +32,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [mode, setMode] = useState<"login" | "register">("login");
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -36,10 +43,14 @@ export function LoginScreen() {
 
   const mutation = useMutation({
     mutationFn: (values: LoginFormValues) =>
-      login(values.email, values.password),
+      mode === "login"
+        ? login(values.email, values.password)
+        : register(values.email, values.password),
     onSuccess: async (user) => {
       queryClient.setQueryData(["auth", "me"], user);
-      toast.success("Signed in successfully.");
+      toast.success(
+        mode === "login" ? "Signed in successfully." : "Account created."
+      );
       router.replace("/");
     },
     onError: (error) => toast.error(userFriendlyError(error))
@@ -64,16 +75,21 @@ export function LoginScreen() {
           </div>
           <div>
             <p className="text-sm text-mutedForeground">Lead Generator App</p>
-            <h1 className="text-xl font-semibold">Sign in</h1>
+            <h1 className="text-xl font-semibold">
+              {mode === "login" ? "Sign in" : "Create account"}
+            </h1>
           </div>
         </div>
 
         <Card>
           <CardHeader>
-            <h2 className="text-lg font-semibold">Search workspace access</h2>
+            <h2 className="text-lg font-semibold">
+              {mode === "login" ? "Search workspace access" : "Start searching"}
+            </h2>
             <p className="mt-1 text-sm text-mutedForeground">
-              Use your account to launch business searches and review collected
-              leads.
+              {mode === "login"
+                ? "Use your account to launch business searches and review collected leads."
+                : "Create your first workspace account with the existing secure registration flow."}
             </p>
           </CardHeader>
           <CardContent>
@@ -123,9 +139,28 @@ export function LoginScreen() {
                 disabled={mutation.isPending}
               >
                 {mutation.isPending ? <Spinner /> : null}
-                Sign in
+                {mode === "login" ? "Sign in" : "Create account"}
               </Button>
             </form>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <Button
+                className="w-full"
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setMode((current) =>
+                    current === "login" ? "register" : "login"
+                  );
+                  form.clearErrors();
+                }}
+              >
+                {mode === "login" ? <UserPlus className="h-4 w-4" /> : null}
+                {mode === "login"
+                  ? "Create a new account"
+                  : "Use an existing account"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </motion.div>

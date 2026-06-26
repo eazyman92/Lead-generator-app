@@ -8,20 +8,22 @@ import type {
   User
 } from "@/types/api";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const CSRF_COOKIE_NAME = "csrf_token";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 
 export class ApiClientError extends Error {
   readonly code: ApiErrorCode;
   readonly status: number;
+  readonly url: string;
 
-  constructor(code: ApiErrorCode, message: string, status: number) {
+  constructor(code: ApiErrorCode, message: string, status: number, url = "") {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
     this.status = status;
+    this.url = url;
   }
 }
 
@@ -44,19 +46,53 @@ function errorCodeForStatus(status: number): ApiErrorCode {
   return "NETWORK_ERROR";
 }
 
-async function parseError(response: Response): Promise<ApiClientError> {
+function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
+function logApiFailure(details: {
+  url: string;
+  method: string;
+  status?: number;
+  error?: unknown;
+  payload?: unknown;
+}) {
+  if (!IS_DEVELOPMENT) {
+    return;
+  }
+  console.error("[api-client] request failed", details);
+}
+
+async function parseError(
+  response: Response,
+  url: string,
+  method: string
+): Promise<ApiClientError> {
   try {
     const payload = (await response.json()) as ApiErrorEnvelope;
+    logApiFailure({
+      url,
+      method,
+      status: response.status,
+      payload
+    });
     return new ApiClientError(
       errorCodeForStatus(response.status),
       payload.error?.message ?? "Request failed.",
-      response.status
+      response.status,
+      url
     );
   } catch {
+    logApiFailure({
+      url,
+      method,
+      status: response.status
+    });
     return new ApiClientError(
       errorCodeForStatus(response.status),
       "Request failed.",
-      response.status
+      response.status,
+      url
     );
   }
 }
@@ -66,9 +102,21 @@ async function ensureCsrf(): Promise<string | null> {
   if (existing) {
     return existing;
   }
-  await fetch(`${API_BASE_URL}/api/v1/auth/csrf`, {
-    credentials: "include"
-  });
+  const url = apiUrl("/api/v1/auth/csrf");
+  try {
+    const response = await fetch(url, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw await parseError(response, url, "GET");
+    }
+  } catch (error) {
+    if (error instanceof ApiClientError) {
+      throw error;
+    }
+    logApiFailure({ url, method: "GET", error });
+    throw new ApiClientError("NETWORK_ERROR", "Unable to reach the API.", 0, url);
+  }
   return readCookie(CSRF_COOKIE_NAME);
 }
 
@@ -89,16 +137,18 @@ async function request<T>(
     }
   }
 
+  const url = apiUrl(path);
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(url, {
       ...options,
       method,
       headers,
       credentials: "include"
     });
-  } catch {
-    throw new ApiClientError("NETWORK_ERROR", "Unable to reach the API.", 0);
+  } catch (error) {
+    logApiFailure({ url, method, error });
+    throw new ApiClientError("NETWORK_ERROR", "Unable to reach the API.", 0, url);
   }
 
   if (response.status === 401 && retryOnAuth) {
@@ -107,7 +157,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    throw await parseError(response);
+    throw await parseError(response, url, method);
   }
 
   const envelope = (await response.json()) as ApiEnvelope<T>;
@@ -129,6 +179,14 @@ export async function getCurrentUser(): Promise<User> {
 
 export async function login(email: string, password: string): Promise<User> {
   const data = await request<{ user: User }>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  });
+  return data.user;
+}
+
+export async function register(email: string, password: string): Promise<User> {
+  const data = await request<{ user: User }>("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password })
   });

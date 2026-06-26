@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 const INTERNAL_BASE_URL =
-  process.env.BACKEND_INTERNAL_BASE_URL ??
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  process.env.BACKEND_INTERNAL_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:8000";
 
 export async function GET(
