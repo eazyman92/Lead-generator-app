@@ -1,4 +1,5 @@
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import CheckConstraint
 
 from app.models import Base
 
@@ -112,3 +113,17 @@ def test_phase_4a_uniqueness_constraints_are_registered() -> None:
         if isinstance(constraint, UniqueConstraint)
     }
     assert "uq_data_sources_business_source_url" in unique_constraints
+
+
+def test_phase_4b_social_profile_platform_metadata_is_registered() -> None:
+    social_profiles = Base.metadata.tables["social_profiles"]
+
+    checks = {
+        constraint.name: str(constraint.sqltext)
+        for constraint in social_profiles.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert "ck_social_profiles_platform_allowed" in checks
+    assert "'x'" in checks["ck_social_profiles_platform_allowed"]
+    assert "'website'" in checks["ck_social_profiles_platform_allowed"]

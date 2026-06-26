@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     worker_retry_max_delay_seconds: int = 3600
     worker_job_timeout_seconds: int = 300
     worker_http_timeout_seconds: int = 10
+    worker_user_agent: str = "LeadGeneratorAppWorker/0.1"
+    contact_collection_provider: str = "osm"
+    contact_collection_max_limit: int = 50
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

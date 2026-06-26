@@ -54,7 +54,7 @@ async def startup() -> None:
         internal_api_token=settings.internal_api_token,
         timeout_seconds=settings.worker_http_timeout_seconds,
     )
-    dispatcher = JobDispatcher(default_handlers())
+    dispatcher = JobDispatcher(default_handlers(settings))
     retry_policy = RetryPolicy(
         base_delay_seconds=settings.worker_default_retry_delay_seconds,
         max_delay_seconds=settings.worker_retry_max_delay_seconds,

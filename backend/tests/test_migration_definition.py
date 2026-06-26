@@ -96,6 +96,23 @@ def test_phase_4a_migration_deduplicates_contacts_before_unique_indexes() -> Non
     ]:
         assert expected in content
 
-    assert content.index("ranked_email_contacts") < content.index("ux_contacts_business_source_email")
-    assert content.index("ranked_phone_contacts") < content.index("ux_contacts_business_source_phone")
-    assert content.index("ranked_name_contacts") < content.index("ux_contacts_business_source_name_url")
+    assert content.index("ranked_email_contacts") < content.index(
+        "ux_contacts_business_source_email"
+    )
+    assert content.index("ranked_phone_contacts") < content.index(
+        "ux_contacts_business_source_phone"
+    )
+    assert content.index("ranked_name_contacts") < content.index(
+        "ux_contacts_business_source_name_url"
+    )
+
+
+def test_phase_4b_migration_expands_social_profile_platforms() -> None:
+    migration = Path(
+        "database/migrations/versions/20260626_0004_expand_social_profile_platforms.py"
+    )
+    content = migration.read_text(encoding="utf-8")
+
+    assert "ck_social_profiles_platform_allowed" in content
+    assert "'x'" in content
+    assert "'website'" in content

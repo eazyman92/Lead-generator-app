@@ -1,6 +1,10 @@
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
+from collectors.contact_collection import build_contact_collection_handler
 from jobs.models import HandlerResult, JobSnapshot
+
+if TYPE_CHECKING:
+    from config.settings import Settings
 
 
 class JobHandler(Protocol):
@@ -22,8 +26,8 @@ class InterfaceOnlyHandler:
         )
 
 
-def default_handlers() -> dict[str, JobHandler]:
+def default_handlers(settings: "Settings") -> dict[str, JobHandler]:
     return {
-        "contact_collection": InterfaceOnlyHandler(),
+        "contact_collection": build_contact_collection_handler(settings),
         "csv_export": InterfaceOnlyHandler(),
     }

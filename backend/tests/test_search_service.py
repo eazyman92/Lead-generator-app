@@ -66,11 +66,27 @@ class FakeAuditLogRepository:
         )
 
 
+class FakeBackgroundJobRepository:
+    def __init__(self) -> None:
+        self.created = []
+
+    async def create_job(self, job_type, payload, max_attempts=3):
+        self.created.append(
+            {
+                "job_type": job_type,
+                "payload": payload,
+                "max_attempts": max_attempts,
+            }
+        )
+        return SimpleNamespace(id=uuid4(), job_type=job_type)
+
+
 def test_search_service_logs_search_and_audit_event() -> None:
     service = SearchService.__new__(SearchService)
     service.session = FakeSession()
     service.businesses = FakeBusinessRepository()
     service.search_logs = FakeSearchLogRepository()
+    service.background_jobs = FakeBackgroundJobRepository()
     service.audit_logs = FakeAuditLogRepository()
     user = FakeUser(id=uuid4())
     context = SimpleNamespace(request_id="request-1", ip_address="127.0.0.1")
@@ -107,6 +123,10 @@ def test_search_service_logs_search_and_audit_event() -> None:
             "results_count": 2,
         }
     ]
+    assert service.background_jobs.created[0]["job_type"] == "contact_collection"
+    job_payload = service.background_jobs.created[0]["payload"]
+    assert job_payload["data"]["query"] == "Gym"
+    assert job_payload["data"]["location"] == "Houston, Texas, United States"
     assert service.audit_logs.events[0]["event_type"] == "business_search"
     assert service.audit_logs.events[0]["user_id"] == user.id
     assert service.audit_logs.events[0]["metadata"]["results_count"] == 2

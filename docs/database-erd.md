@@ -383,7 +383,7 @@ Check constraints:
 
 | Constraint | Rule |
 | --- | --- |
-| `ck_social_profiles_platform_allowed` | `platform IN ('facebook', 'instagram', 'linkedin', 'youtube')` |
+| `ck_social_profiles_platform_allowed` | `platform IN ('facebook', 'instagram', 'linkedin', 'youtube', 'x', 'website')` |
 
 ### data_sources
 

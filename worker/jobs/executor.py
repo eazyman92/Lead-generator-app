@@ -1,13 +1,16 @@
 import asyncio
 from datetime import datetime, timezone
 from time import monotonic
+from typing import TYPE_CHECKING
 
 from config.logging import get_logger
-from config.settings import Settings
 from jobs.dispatcher import JobDispatcher
 from jobs.internal_api import InternalApiClient, InternalApiError
 from jobs.models import HandlerResult, JobSnapshot, WorkerState
 from jobs.retry import RetryPolicy
+
+if TYPE_CHECKING:
+    from config.settings import Settings
 
 logger = get_logger(__name__)
 
@@ -15,7 +18,7 @@ logger = get_logger(__name__)
 class WorkerExecutor:
     def __init__(
         self,
-        settings: Settings,
+        settings: "Settings",
         api_client: InternalApiClient,
         dispatcher: JobDispatcher,
         retry_policy: RetryPolicy,

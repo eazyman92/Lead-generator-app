@@ -11,8 +11,8 @@ class SocialProfile(Base):
     __tablename__ = "social_profiles"
     __table_args__ = (
         CheckConstraint(
-            "platform IN ('facebook', 'instagram', 'linkedin', 'youtube')",
-            name="platform_allowed",
+            "platform IN ('facebook', 'instagram', 'linkedin', 'youtube', 'x', 'website')",
+            name="ck_social_profiles_platform_allowed",
         ),
     )
 
@@ -27,4 +27,3 @@ class SocialProfile(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
 
     business = relationship("Business", back_populates="social_profiles")
-

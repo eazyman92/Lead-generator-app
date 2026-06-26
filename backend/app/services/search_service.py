@@ -4,7 +4,13 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Business, SearchLog, User
-from app.repositories import AuditLogRepository, BusinessRepository, SearchLogRepository
+from app.repositories import (
+    AuditLogRepository,
+    BackgroundJobRepository,
+    BusinessRepository,
+    SearchLogRepository,
+)
+from app.schemas.background_job import empty_payload_envelope
 from app.schemas.search import BusinessSearchRequest, PaginationRequest, PaginationResponse
 
 
@@ -27,6 +33,7 @@ class SearchService:
         self.session = session
         self.businesses = BusinessRepository(session)
         self.search_logs = SearchLogRepository(session)
+        self.background_jobs = BackgroundJobRepository(session)
         self.audit_logs = AuditLogRepository(session)
 
     async def search(
@@ -64,6 +71,30 @@ class SearchService:
                 "results_count": total,
             }
         )
+        idempotency_key = (
+            "contact_collection:search:"
+            f"{user.id}:{filters.industry}:{filters.country}:{filters.state}:{filters.city}"
+        ).lower()
+        job = await self.background_jobs.create_job(
+            "contact_collection",
+            empty_payload_envelope(
+                request_id=context.request_id,
+                idempotency_key=idempotency_key,
+                created_by_user_id=user.id,
+                data={
+                    "search_id": context.request_id,
+                    "query": filters.industry,
+                    "category": filters.industry,
+                    "location": f"{filters.city}, {filters.state}, {filters.country}",
+                    "country": filters.country,
+                    "state": filters.state,
+                    "city": filters.city,
+                    "limit": pagination.per_page,
+                    "user_id": str(user.id),
+                    "idempotency_key": idempotency_key,
+                },
+            ),
+        )
         await self._audit(
             "business_search",
             user,
@@ -76,6 +107,16 @@ class SearchService:
                 "page": pagination.page,
                 "per_page": pagination.per_page,
                 "results_count": total,
+            },
+        )
+        await self._audit(
+            "background_job_created",
+            user,
+            context,
+            {
+                "job_id": str(job.id),
+                "job_type": job.job_type,
+                "idempotency_key": idempotency_key,
             },
         )
         await self.session.commit()

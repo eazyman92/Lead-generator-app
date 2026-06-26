@@ -161,7 +161,7 @@ social_profiles
 
 * id (UUID, PK)
 * business_id (FK)
-* platform (TEXT) — facebook, instagram, linkedin, youtube
+* platform (TEXT) — facebook, instagram, linkedin, youtube, x, website
 * url (TEXT)
 
 ---
