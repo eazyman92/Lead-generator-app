@@ -11,6 +11,13 @@ from collectors.normalization import normalize_url
 from config.logging import get_logger
 
 logger = get_logger(__name__)
+RAW_RESPONSE_LOG_LIMIT = 2000
+
+
+def truncate_for_log(value: str, limit: int = RAW_RESPONSE_LOG_LIMIT) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}...<truncated>"
 
 
 @dataclass(frozen=True)
@@ -139,6 +146,7 @@ class OpenStreetMapBusinessProvider:
                 "provider": self.name,
                 "query": query,
                 "limit": max(1, min(limit, 50)),
+                "request_url": url,
             },
         )
         return await asyncio.to_thread(self._search_sync, url, payload)
@@ -171,6 +179,17 @@ class OpenStreetMapBusinessProvider:
         except URLError as exc:
             raise ProviderError("DNS_FAILURE", "Provider could not be resolved.", True, self.name) from exc
 
+        logger.info(
+            "provider_raw_response",
+            extra={
+                "request_id": payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "status": status,
+                "request_url": url,
+                "raw_body": truncate_for_log(body),
+                "raw_body_length": len(body),
+            },
+        )
         try:
             results = json.loads(body)
         except json.JSONDecodeError as exc:
@@ -187,16 +206,111 @@ class OpenStreetMapBusinessProvider:
                 False,
                 self.name,
             )
+        parsed = self._parse_results(results, payload, url, status)
         logger.info(
             "provider_response",
             extra={
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "businesses_returned": len(results),
+                "request_url": url,
+                "records_parsed": len(results),
+                "businesses_returned": len(parsed),
             },
         )
-        return [self._from_osm(item, payload) for item in results]
+        if not results:
+            raise ProviderError(
+                "EMPTY_PROVIDER_RESPONSE",
+                "Provider returned an empty result set.",
+                False,
+                self.name,
+            )
+        if not parsed:
+            raise ProviderError(
+                "FILTERED_ALL_RESULTS",
+                "Provider results were parsed but no candidate was accepted.",
+                False,
+                self.name,
+            )
+        return parsed
+
+    def _parse_results(
+        self,
+        results: list[Any],
+        payload: dict[str, Any],
+        url: str,
+        status: int,
+    ) -> list[RawBusiness]:
+        businesses: list[RawBusiness] = []
+        for index, item in enumerate(results):
+            if not isinstance(item, dict):
+                self._log_candidate_decision(
+                    payload,
+                    url,
+                    status,
+                    index,
+                    False,
+                    "candidate_not_object",
+                    {"candidate_type": type(item).__name__},
+                )
+                continue
+
+            display_name = item.get("display_name")
+            name = item.get("name")
+            osm_id = item.get("osm_id")
+            if not display_name and not name:
+                self._log_candidate_decision(
+                    payload,
+                    url,
+                    status,
+                    index,
+                    False,
+                    "missing_name_and_display_name",
+                    {"osm_id": osm_id},
+                )
+                continue
+
+            business = self._from_osm(item, payload)
+            businesses.append(business)
+            self._log_candidate_decision(
+                payload,
+                url,
+                status,
+                index,
+                True,
+                "accepted",
+                {
+                    "osm_id": osm_id,
+                    "osm_type": item.get("osm_type"),
+                    "business_name": business.name,
+                    "source_url": business.source_url,
+                },
+            )
+        return businesses
+
+    def _log_candidate_decision(
+        self,
+        payload: dict[str, Any],
+        url: str,
+        status: int,
+        index: int,
+        accepted: bool,
+        reason: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        logger.info(
+            "provider_candidate_decision",
+            extra={
+                "request_id": payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "status": status,
+                "request_url": url,
+                "candidate_index": index,
+                "accepted": accepted,
+                "reason": reason,
+                **metadata,
+            },
+        )
 
     def _from_osm(self, item: dict[str, Any], payload: dict[str, Any]) -> RawBusiness:
         address = item.get("address", {})

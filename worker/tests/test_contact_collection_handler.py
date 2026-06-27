@@ -182,7 +182,12 @@ def test_contact_collection_service_fails_explicitly_when_provider_returns_zero_
 
     class EmptyProvider:
         async def search(self, payload):
-            return []
+            raise ProviderError(
+                "EMPTY_PROVIDER_RESPONSE",
+                "Provider returned an empty result set.",
+                False,
+                "openstreetmap",
+            )
 
     repository = FakeRepository(payload)
     service = ContactCollectionService(
@@ -198,10 +203,10 @@ def test_contact_collection_service_fails_explicitly_when_provider_returns_zero_
     with pytest.raises(ContactCollectionError) as exc:
         asyncio.run(service.run(build_job()))
 
-    assert exc.value.code == "NO_BUSINESSES_FOUND"
+    assert exc.value.code == "EMPTY_PROVIDER_RESPONSE"
     assert repository.businesses == []
-    assert repository.progress_updates[-1]["failure_reason"] == "NO_BUSINESSES_FOUND"
-    assert repository.audit_records[-1]["metadata"]["failure_reason"] == "NO_BUSINESSES_FOUND"
+    assert repository.progress_updates[-1]["failure_reason"] == "EMPTY_PROVIDER_RESPONSE"
+    assert repository.audit_records[-1]["metadata"]["failure_reason"] == "EMPTY_PROVIDER_RESPONSE"
 
 
 def test_contact_collection_service_records_provider_failure_reason() -> None:
