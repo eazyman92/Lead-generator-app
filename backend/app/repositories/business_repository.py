@@ -54,4 +54,5 @@ class BusinessRepository(BaseRepository[Business]):
             func.lower(Business.country) == country.lower(),
             func.lower(Business.state) == state.lower(),
             func.lower(Business.city) == city.lower(),
+            func.lower(Business.source_type) != "manual",
         )

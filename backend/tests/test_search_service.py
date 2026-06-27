@@ -176,7 +176,7 @@ def test_search_service_queues_collection_when_no_persisted_results_exist() -> N
     assert service.session.committed is True
 
 
-def test_search_service_does_not_requeue_completed_empty_collection() -> None:
+def test_search_service_requeues_when_only_stale_completed_empty_collection_exists() -> None:
     service = SearchService.__new__(SearchService)
     service.session = FakeSession()
     service.businesses = FakeBusinessRepository(total=0)
@@ -196,8 +196,8 @@ def test_search_service_does_not_requeue_completed_empty_collection() -> None:
 
     result = asyncio.run(service.search(payload, user, context))
 
-    assert service.background_jobs.created == []
-    assert result.job_id is None
+    assert service.background_jobs.created[0]["job_type"] == "contact_collection"
+    assert result.job_id is not None
     assert result.pagination.total == 0
 
 

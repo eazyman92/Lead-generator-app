@@ -12,12 +12,16 @@ from collectors.providers import (
     CompositeBusinessProvider,
     OpenStreetMapBusinessProvider,
     PayloadBusinessProvider,
+    ProviderError,
 )
+from config.logging import get_logger
 from jobs.models import HandlerResult, JobSnapshot
 
 if TYPE_CHECKING:
     from collectors.repository import CollectorRepository
     from config.settings import Settings
+
+logger = get_logger(__name__)
 
 
 class ContactCollectionError(Exception):
@@ -31,20 +35,26 @@ class ContactCollectionError(Exception):
 @dataclass
 class CollectionProgress:
     businesses_processed: int = 0
+    businesses_inserted: int = 0
+    businesses_updated: int = 0
     contacts_found: int = 0
     contacts_saved: int = 0
     duplicates_skipped: int = 0
     errors: int = 0
     completion_percent: int = 0
+    failure_reason: str | None = None
 
-    def as_dict(self) -> dict[str, int]:
+    def as_dict(self) -> dict[str, int | str | None]:
         return {
             "businesses_processed": self.businesses_processed,
+            "businesses_inserted": self.businesses_inserted,
+            "businesses_updated": self.businesses_updated,
             "contacts_found": self.contacts_found,
             "contacts_saved": self.contacts_saved,
             "duplicates_skipped": self.duplicates_skipped,
             "errors": self.errors,
             "completion_percent": self.completion_percent,
+            "failure_reason": self.failure_reason,
         }
 
 
@@ -64,6 +74,16 @@ class ContactCollectionService:
             payload = await self.repository.load_job_payload(session, job.id)
             request_id = payload.get("request_id") or "system"
             user_id = payload.get("created_by_user_id")
+            logger.info(
+                "contact_collection_payload_loaded",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "payload_has_data": bool((payload.get("data") or {})),
+                    "idempotency_key": payload.get("idempotency_key"),
+                },
+            )
             try:
                 data = self._validate_payload(payload)
             except ContactCollectionError as exc:
@@ -78,6 +98,18 @@ class ContactCollectionService:
                 raise
             user_id = data.get("user_id") or user_id
             progress = CollectionProgress()
+            logger.info(
+                "contact_collection_started",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "query": data.get("query"),
+                    "category": data.get("category"),
+                    "location": data.get("location"),
+                    "limit": data.get("limit"),
+                },
+            )
             await self.repository.audit(
                 session,
                 "contact_collection_started",
@@ -100,26 +132,89 @@ class ContactCollectionService:
 
             try:
                 raw_businesses = await self.provider.search(data)
+            except ProviderError as exc:
+                await self._record_failure(
+                    session,
+                    job,
+                    request_id,
+                    user_id,
+                    progress,
+                    exc.code,
+                    exc.message,
+                    {"provider": exc.provider, "retryable": exc.retryable},
+                )
+                await session.commit()
+                raise ContactCollectionError(exc.code, exc.message, exc.retryable) from exc
             except (TimeoutError, URLError) as exc:
-                raise ContactCollectionError(
+                await self._record_failure(
+                    session,
+                    job,
+                    request_id,
+                    user_id,
+                    progress,
                     "PROVIDER_FAILURE",
                     "Business search provider failed.",
-                    True,
-                ) from exc
+                    {"retryable": True},
+                )
+                await session.commit()
+                raise ContactCollectionError("PROVIDER_FAILURE", "Business search provider failed.", True) from exc
             except Exception as exc:
-                raise ContactCollectionError(
+                await self._record_failure(
+                    session,
+                    job,
+                    request_id,
+                    user_id,
+                    progress,
                     "PROVIDER_FAILURE",
                     "Business search provider failed.",
-                    True,
-                ) from exc
+                    {"retryable": True},
+                )
+                await session.commit()
+                raise ContactCollectionError("PROVIDER_FAILURE", "Business search provider failed.", True) from exc
+
+            logger.info(
+                "contact_collection_provider_results",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "businesses_returned": len(raw_businesses),
+                },
+            )
+            if not raw_businesses:
+                await self._record_failure(
+                    session,
+                    job,
+                    request_id,
+                    user_id,
+                    progress,
+                    "NO_BUSINESSES_FOUND",
+                    "Provider returned zero businesses.",
+                    {"query": data.get("query"), "location": data.get("location")},
+                )
+                await session.commit()
+                raise ContactCollectionError(
+                    "NO_BUSINESSES_FOUND",
+                    "Provider returned zero businesses.",
+                    False,
+                )
 
             businesses = [normalize_business(item) for item in raw_businesses]
-            total = max(len(businesses), 1)
+            total = len(businesses)
             for business in businesses:
                 try:
                     await self._process_business(session, business, request_id, user_id, progress)
                 except Exception:
                     progress.errors += 1
+                    logger.exception(
+                        "business_persistence_failed",
+                        extra={
+                            "request_id": request_id,
+                            "job_id": job.id,
+                            "job_type": job.job_type,
+                            "business_name": business.name,
+                        },
+                    )
                     await self.repository.audit(
                         session,
                         "contact_collection_failed",
@@ -158,7 +253,51 @@ class ContactCollectionService:
                 {"job_id": job.id, **progress.as_dict()},
             )
             await session.commit()
+            logger.info(
+                "contact_collection_completed",
+                extra={
+                    "request_id": request_id,
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    **progress.as_dict(),
+                },
+            )
             return progress
+
+    async def _record_failure(
+        self,
+        session,
+        job: JobSnapshot,
+        request_id: str,
+        user_id: str | None,
+        progress: CollectionProgress,
+        failure_reason: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        progress.errors += 1
+        progress.failure_reason = failure_reason
+        progress.completion_percent = 100
+        details = {"job_id": job.id, "failure_reason": failure_reason, **(metadata or {})}
+        logger.warning(
+            "contact_collection_failed",
+            extra={
+                "request_id": request_id,
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "failure_reason": failure_reason,
+                "error_message": message,
+                **(metadata or {}),
+            },
+        )
+        await self.repository.update_progress(session, job.id, progress.as_dict())
+        await self.repository.audit(
+            session,
+            "contact_collection_failed",
+            request_id,
+            user_id,
+            details,
+        )
 
     async def _process_business(
         self,
@@ -176,6 +315,21 @@ class ContactCollectionService:
             {"business_name": business.name, "source_url": business.source_url},
         )
         business_id, created = await self.repository.save_business(session, business)
+        if created:
+            progress.businesses_inserted += 1
+        else:
+            progress.businesses_updated += 1
+            progress.duplicates_skipped += 1
+        logger.info(
+            "business_persisted",
+            extra={
+                "request_id": request_id,
+                "business_id": str(business_id),
+                "business_name": business.name,
+                "inserted": created,
+                "source_url": business.source_url,
+            },
+        )
         await self.repository.audit(
             session,
             "business_saved" if created else "business_updated",
@@ -333,6 +487,7 @@ class ContactCollectionService:
         data = dict(payload.get("data") or payload)
         data["idempotency_key"] = data.get("idempotency_key") or payload.get("idempotency_key")
         data["user_id"] = data.get("user_id") or payload.get("created_by_user_id")
+        data["request_id"] = payload.get("request_id")
         if "limit" in data:
             data["limit"] = max(
                 1,

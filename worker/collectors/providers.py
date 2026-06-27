@@ -1,14 +1,32 @@
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from collectors.models import RawBusiness, RawContact, RawSocialProfile
 from collectors.normalization import normalize_url
+from config.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ProviderError(Exception):
+    code: str
+    message: str
+    retryable: bool
+    provider: str
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class BusinessSearchProvider(Protocol):
+    name: str
+
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
         """Return raw businesses from a provider-specific source."""
 
@@ -16,10 +34,20 @@ class BusinessSearchProvider(Protocol):
 class PayloadBusinessProvider:
     """Provider for deterministic jobs where businesses are supplied in the job payload."""
 
+    name = "payload"
+
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
         businesses = payload.get("businesses") or []
-        if not businesses and payload.get("query"):
-            businesses = [payload]
+        if not businesses:
+            logger.info(
+                "provider_skipped",
+                extra={
+                    "request_id": payload.get("request_id", "unknown"),
+                    "provider": self.name,
+                    "reason": "no_payload_businesses",
+                },
+            )
+            return []
         return [self._from_payload(item, payload) for item in businesses]
 
     def _from_payload(self, item: dict[str, Any], root_payload: dict[str, Any]) -> RawBusiness:
@@ -75,6 +103,8 @@ class PayloadBusinessProvider:
 class OpenStreetMapBusinessProvider:
     """Public business search provider backed by OpenStreetMap Nominatim."""
 
+    name = "openstreetmap"
+
     def __init__(self, user_agent: str, timeout_seconds: int = 10) -> None:
         self.user_agent = user_agent
         self.timeout_seconds = timeout_seconds
@@ -102,12 +132,70 @@ class OpenStreetMapBusinessProvider:
             }
         )
         url = f"https://nominatim.openstreetmap.org/search?{params}"
+        logger.info(
+            "provider_request",
+            extra={
+                "request_id": payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "query": query,
+                "limit": max(1, min(limit, 50)),
+            },
+        )
         return await asyncio.to_thread(self._search_sync, url, payload)
 
     def _search_sync(self, url: str, payload: dict[str, Any]) -> list[RawBusiness]:
         request = Request(url, headers={"User-Agent": self.user_agent})
-        with urlopen(request, timeout=self.timeout_seconds) as response:
-            results = json.loads(response.read().decode("utf-8"))
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = getattr(response, "status", 200)
+                body = response.read().decode("utf-8")
+        except HTTPError as exc:
+            code = "HTTP_429" if exc.code == 429 else "HTTP_5XX" if exc.code >= 500 else "PROVIDER_FAILURE"
+            logger.warning(
+                "provider_response_failed",
+                extra={
+                    "request_id": payload.get("request_id", "unknown"),
+                    "provider": self.name,
+                    "status": exc.code,
+                    "error_code": code,
+                },
+            )
+            raise ProviderError(
+                code,
+                "Provider request failed.",
+                exc.code == 429 or exc.code >= 500,
+                self.name,
+            ) from exc
+        except TimeoutError as exc:
+            raise ProviderError("NETWORK_TIMEOUT", "Provider request timed out.", True, self.name) from exc
+        except URLError as exc:
+            raise ProviderError("DNS_FAILURE", "Provider could not be resolved.", True, self.name) from exc
+
+        try:
+            results = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ProviderError(
+                "INVALID_PROVIDER_RESPONSE",
+                "Provider returned invalid JSON.",
+                False,
+                self.name,
+            ) from exc
+        if not isinstance(results, list):
+            raise ProviderError(
+                "INVALID_PROVIDER_RESPONSE",
+                "Provider returned an invalid response shape.",
+                False,
+                self.name,
+            )
+        logger.info(
+            "provider_response",
+            extra={
+                "request_id": payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "status": status,
+                "businesses_returned": len(results),
+            },
+        )
         return [self._from_osm(item, payload) for item in results]
 
     def _from_osm(self, item: dict[str, Any], payload: dict[str, Any]) -> RawBusiness:
@@ -128,9 +216,15 @@ class OpenStreetMapBusinessProvider:
             website=website,
             phone=phone,
             email=email,
-            country=address.get("country", payload.get("country", "")),
-            state=address.get("state", payload.get("state", "")),
-            city=address.get("city") or address.get("town") or address.get("village") or "",
+            country=payload.get("country") or address.get("country", ""),
+            state=payload.get("state") or address.get("state", ""),
+            city=(
+                payload.get("city")
+                or address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or ""
+            ),
             address=display_name,
             description=item.get("type"),
             source_type="directory",
@@ -158,7 +252,22 @@ class CompositeBusinessProvider:
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
         for provider in self.providers:
+            logger.info(
+                "provider_selected",
+                extra={
+                    "request_id": payload.get("request_id", "unknown"),
+                    "provider": provider.name,
+                },
+            )
             businesses = await provider.search(payload)
+            logger.info(
+                "provider_result",
+                extra={
+                    "request_id": payload.get("request_id", "unknown"),
+                    "provider": provider.name,
+                    "businesses_returned": len(businesses),
+                },
+            )
             if businesses:
                 return businesses
         return []

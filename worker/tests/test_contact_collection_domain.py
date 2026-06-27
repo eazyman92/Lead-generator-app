@@ -84,3 +84,22 @@ def test_payload_provider_returns_payload_businesses() -> None:
 
     assert businesses[0].name == "Example Gym"
     assert businesses[0].contacts[0].email == "contact@example.com"
+
+
+def test_payload_provider_does_not_convert_search_query_to_manual_business() -> None:
+    provider = PayloadBusinessProvider()
+
+    businesses = asyncio.run(
+        provider.search(
+            {
+                "query": "Restaurants",
+                "category": "Restaurants",
+                "location": "Ikeja, Lagos, Nigeria",
+                "country": "Nigeria",
+                "state": "Lagos",
+                "city": "Ikeja",
+            }
+        )
+    )
+
+    assert businesses == []

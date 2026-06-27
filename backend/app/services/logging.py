@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+STANDARD_LOG_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__)
+
 
 class JsonFormatter(logging.Formatter):
     """Format log records as structured JSON."""
@@ -15,6 +17,9 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "unknown"),
         }
+        for key, value in record.__dict__.items():
+            if key not in STANDARD_LOG_RECORD_KEYS and key not in payload:
+                payload[key] = value
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
@@ -34,4 +39,3 @@ def configure_logging() -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
-

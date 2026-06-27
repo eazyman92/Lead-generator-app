@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+STANDARD_LOG_RECORD_KEYS = set(logging.makeLogRecord({}).__dict__)
+
 
 class JsonFormatter(logging.Formatter):
     """Format worker log records as structured JSON."""
@@ -15,9 +17,8 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "unknown"),
         }
-        for key in ("job_id", "job_type", "worker_id", "duration_seconds"):
-            value = getattr(record, key, None)
-            if value is not None:
+        for key, value in record.__dict__.items():
+            if key not in STANDARD_LOG_RECORD_KEYS and key not in payload:
                 payload[key] = value
 
         if record.exc_info:

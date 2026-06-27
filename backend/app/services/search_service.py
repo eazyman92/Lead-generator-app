@@ -12,6 +12,9 @@ from app.repositories import (
 )
 from app.schemas.background_job import empty_payload_envelope
 from app.schemas.search import BusinessSearchRequest, PaginationRequest, PaginationResponse
+from app.services.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,19 @@ class SearchService:
         """Search businesses, persist search analytics, and audit the action."""
         filters = payload.filters
         pagination = payload.pagination
+        logger.info(
+            "search_request_received",
+            extra={
+                "request_id": context.request_id,
+                "user_id": str(user.id),
+                "industry": filters.industry,
+                "country": filters.country,
+                "state": filters.state,
+                "city": filters.city,
+                "page": pagination.page,
+                "per_page": pagination.per_page,
+            },
+        )
         total = await self.businesses.count_search(
             filters.industry,
             filters.country,
@@ -59,6 +75,19 @@ class SearchService:
             filters.city,
             limit=pagination.per_page,
             offset=pagination.offset,
+        )
+        logger.info(
+            "search_refresh_query",
+            extra={
+                "request_id": context.request_id,
+                "user_id": str(user.id),
+                "industry": filters.industry,
+                "country": filters.country,
+                "state": filters.state,
+                "city": filters.city,
+                "total": total,
+                "returned": len(businesses),
+            },
         )
 
         await self.search_logs.create(
@@ -77,35 +106,50 @@ class SearchService:
             "contact_collection:search:"
             f"{user.id}:{filters.industry}:{filters.country}:{filters.state}:{filters.city}"
         ).lower()
-        latest_job = await self.background_jobs.get_latest_by_idempotency_key(
-            "contact_collection",
-            idempotency_key,
-        )
-        should_enqueue_collection = total == 0 and (
-            latest_job is None or latest_job.status != "completed"
-        )
-        if should_enqueue_collection:
+        if total == 0:
+            job_payload = empty_payload_envelope(
+                request_id=context.request_id,
+                idempotency_key=idempotency_key,
+                created_by_user_id=user.id,
+                data={
+                    "search_id": context.request_id,
+                    "query": filters.industry,
+                    "category": filters.industry,
+                    "location": f"{filters.city}, {filters.state}, {filters.country}",
+                    "country": filters.country,
+                    "state": filters.state,
+                    "city": filters.city,
+                    "limit": pagination.per_page,
+                    "user_id": str(user.id),
+                    "idempotency_key": idempotency_key,
+                },
+            )
             job = await self.background_jobs.create_job(
                 "contact_collection",
-                empty_payload_envelope(
-                    request_id=context.request_id,
-                    idempotency_key=idempotency_key,
-                    created_by_user_id=user.id,
-                    data={
-                        "search_id": context.request_id,
-                        "query": filters.industry,
-                        "category": filters.industry,
-                        "location": f"{filters.city}, {filters.state}, {filters.country}",
-                        "country": filters.country,
-                        "state": filters.state,
-                        "city": filters.city,
-                        "limit": pagination.per_page,
-                        "user_id": str(user.id),
-                        "idempotency_key": idempotency_key,
-                    },
-                ),
+                job_payload,
             )
             job_id = str(job.id)
+            logger.info(
+                "background_job_created",
+                extra={
+                    "request_id": context.request_id,
+                    "user_id": str(user.id),
+                    "job_id": job_id,
+                    "job_type": "contact_collection",
+                    "idempotency_key": idempotency_key,
+                    "payload_data_keys": sorted(job_payload["data"].keys()),
+                },
+            )
+        else:
+            logger.info(
+                "background_job_skipped",
+                extra={
+                    "request_id": context.request_id,
+                    "user_id": str(user.id),
+                    "idempotency_key": idempotency_key,
+                    "reason": "persisted_results_available",
+                },
+            )
         await self._audit(
             "business_search",
             user,
@@ -132,6 +176,16 @@ class SearchService:
                 },
             )
         await self.session.commit()
+        logger.info(
+            "dashboard_search_response_ready",
+            extra={
+                "request_id": context.request_id,
+                "user_id": str(user.id),
+                "results_count": len(businesses),
+                "pagination_total": total,
+                "job_id": job_id,
+            },
+        )
 
         return SearchResults(
             businesses=businesses,

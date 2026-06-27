@@ -3,8 +3,11 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
-from collectors.contact_collection import ContactCollectionService
+import pytest
+
+from collectors.contact_collection import ContactCollectionError, ContactCollectionService
 from collectors.models import RawBusiness, RawContact, RawSocialProfile
+from collectors.providers import ProviderError
 from jobs.models import JobSnapshot
 
 
@@ -47,6 +50,7 @@ class FakeRepository:
         self.payload = payload
         self.progress_updates = []
         self.audit_events = []
+        self.audit_records = []
         self.businesses = []
         self.contacts = []
         self.social_profiles = []
@@ -60,6 +64,14 @@ class FakeRepository:
 
     async def audit(self, session, event_type, request_id, user_id, metadata):
         self.audit_events.append(event_type)
+        self.audit_records.append(
+            {
+                "event_type": event_type,
+                "request_id": request_id,
+                "user_id": user_id,
+                "metadata": metadata,
+            }
+        )
 
     async def save_business(self, session, business):
         self.businesses.append(business)
@@ -95,7 +107,7 @@ class FakeProvider:
                 city="Houston",
                 address="123 Main",
                 description=None,
-                source_type="manual",
+                source_type="directory",
                 source_url="https://example.com",
                 trust_tier="C",
                 confidence_score=65,
@@ -146,12 +158,92 @@ def test_contact_collection_service_persists_business_contact_source_and_progres
     assert provider.seen_payload["query"] == "gym"
     assert provider.seen_payload["location"] == "Houston"
     assert progress.businesses_processed == 1
+    assert progress.businesses_inserted == 1
     assert progress.contacts_saved == 1
     assert repository.businesses[0].name == "Example Gym"
     assert repository.contacts[0].email == "sales@example.com"
     assert {profile.platform for profile in repository.social_profiles} == {"linkedin"}
     assert "contact_collection_completed" in repository.audit_events
     assert repository.progress_updates[-1]["completion_percent"] == 100
+
+
+def test_contact_collection_service_fails_explicitly_when_provider_returns_zero_results() -> None:
+    payload = {
+        "request_id": "request-1",
+        "created_by_user_id": str(uuid4()),
+        "idempotency_key": "contact_collection:test",
+        "data": {
+            "query": "restaurants",
+            "location": "Ikeja, Lagos, Nigeria",
+            "category": "restaurants",
+            "limit": 10,
+        },
+    }
+
+    class EmptyProvider:
+        async def search(self, payload):
+            return []
+
+    repository = FakeRepository(payload)
+    service = ContactCollectionService(
+        SimpleNamespace(
+            contact_collection_max_limit=50,
+            worker_user_agent="test",
+            worker_http_timeout_seconds=1,
+        ),
+        repository,
+        EmptyProvider(),
+    )
+
+    with pytest.raises(ContactCollectionError) as exc:
+        asyncio.run(service.run(build_job()))
+
+    assert exc.value.code == "NO_BUSINESSES_FOUND"
+    assert repository.businesses == []
+    assert repository.progress_updates[-1]["failure_reason"] == "NO_BUSINESSES_FOUND"
+    assert repository.audit_records[-1]["metadata"]["failure_reason"] == "NO_BUSINESSES_FOUND"
+
+
+def test_contact_collection_service_records_provider_failure_reason() -> None:
+    payload = {
+        "request_id": "request-1",
+        "created_by_user_id": str(uuid4()),
+        "idempotency_key": "contact_collection:test",
+        "data": {
+            "query": "restaurants",
+            "location": "Ikeja, Lagos, Nigeria",
+            "category": "restaurants",
+            "limit": 10,
+        },
+    }
+
+    class RateLimitedProvider:
+        async def search(self, payload):
+            raise ProviderError(
+                "HTTP_429",
+                "Provider request failed.",
+                True,
+                "openstreetmap",
+            )
+
+    repository = FakeRepository(payload)
+    service = ContactCollectionService(
+        SimpleNamespace(
+            contact_collection_max_limit=50,
+            worker_user_agent="test",
+            worker_http_timeout_seconds=1,
+        ),
+        repository,
+        RateLimitedProvider(),
+    )
+
+    with pytest.raises(ContactCollectionError) as exc:
+        asyncio.run(service.run(build_job()))
+
+    assert exc.value.code == "HTTP_429"
+    assert exc.value.retryable is True
+    assert repository.progress_updates[-1]["failure_reason"] == "HTTP_429"
+    assert repository.audit_records[-1]["metadata"]["provider"] == "openstreetmap"
 
 
 def test_contact_collection_service_records_website_social_profile() -> None:
