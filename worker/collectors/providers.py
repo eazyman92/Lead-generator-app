@@ -143,6 +143,22 @@ class OpenStreetMapBusinessProvider:
         "supermarket": ("shop", "supermarket"),
         "supermarkets": ("shop", "supermarket"),
     }
+    city_bounding_boxes = {
+        ("nigeria", "lagos", "ikeja"): (6.55, 3.28, 6.66, 3.43),
+        ("nigeria", "lagos", "lekki"): (6.40, 3.45, 6.52, 3.65),
+        ("nigeria", "lagos", "victoria island"): (6.41, 3.39, 6.46, 3.46),
+        ("nigeria", "lagos", "surulere"): (6.48, 3.32, 6.53, 3.38),
+        ("nigeria", "lagos", "yaba"): (6.50, 3.36, 6.54, 3.41),
+        ("nigeria", "abuja federal capital territory", "abuja"): (8.85, 7.25, 9.20, 7.65),
+        ("nigeria", "abuja federal capital territory", "gwarinpa"): (9.05, 7.37, 9.13, 7.46),
+        ("nigeria", "abuja federal capital territory", "maitama"): (9.07, 7.47, 9.11, 7.52),
+        ("nigeria", "rivers", "port harcourt"): (4.74, 6.90, 4.90, 7.08),
+        ("nigeria", "rivers", "bonny"): (4.38, 7.10, 4.52, 7.28),
+        ("united states", "texas", "houston"): (29.52, -95.82, 30.12, -95.00),
+        ("united states", "texas", "austin"): (30.10, -97.94, 30.52, -97.56),
+        ("united states", "texas", "dallas"): (32.61, -97.00, 33.02, -96.52),
+        ("united kingdom", "england", "london"): (51.28, -0.51, 51.70, 0.33),
+    }
 
     def __init__(self, user_agent: str, timeout_seconds: int = 10) -> None:
         self.user_agent = user_agent
@@ -150,7 +166,7 @@ class OpenStreetMapBusinessProvider:
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
         tag_key, tag_value = self._tag_for_payload(payload)
-        query = self._build_overpass_query(payload, tag_key, tag_value)
+        query, search_mode = self._build_overpass_query(payload, tag_key, tag_value)
         limit = int(payload.get("limit", 10))
         logger.info(
             "provider_request",
@@ -159,14 +175,21 @@ class OpenStreetMapBusinessProvider:
                 "provider": self.name,
                 "endpoint": self.endpoint,
                 "overpass_query": query,
+                "overpass_search_mode": search_mode,
                 "osm_tag_key": tag_key,
                 "osm_tag_value": tag_value,
                 "limit": max(1, min(limit, 50)),
+                "http_timeout_seconds": self.timeout_seconds,
             },
         )
-        return await asyncio.to_thread(self._search_sync, query, payload)
+        return await asyncio.to_thread(self._search_sync, query, payload, search_mode)
 
-    def _search_sync(self, query: str, payload: dict[str, Any]) -> list[RawBusiness]:
+    def _search_sync(
+        self,
+        query: str,
+        payload: dict[str, Any],
+        search_mode: str,
+    ) -> list[RawBusiness]:
         request = Request(
             self.endpoint,
             data=urlencode({"data": query}).encode("utf-8"),
@@ -196,6 +219,7 @@ class OpenStreetMapBusinessProvider:
                     "status": exc.code,
                     "error_code": code,
                     "endpoint": self.endpoint,
+                    "overpass_search_mode": search_mode,
                 },
             )
             raise ProviderError(
@@ -227,6 +251,7 @@ class OpenStreetMapBusinessProvider:
                 "status": status,
                 "endpoint": self.endpoint,
                 "overpass_query": query,
+                "overpass_search_mode": search_mode,
                 "raw_body": truncate_for_log(body),
                 "raw_body_length": len(body),
             },
@@ -259,6 +284,7 @@ class OpenStreetMapBusinessProvider:
                 "provider": self.name,
                 "status": status,
                 "endpoint": self.endpoint,
+                "overpass_search_mode": search_mode,
                 "raw_response_size": len(body),
                 "parsed_objects": len(elements),
                 "businesses_returned": len(parsed),
@@ -421,22 +447,65 @@ class OpenStreetMapBusinessProvider:
             self.name,
         )
 
-    def _build_overpass_query(self, payload: dict[str, Any], tag_key: str, tag_value: str) -> str:
+    def _build_overpass_query(
+        self,
+        payload: dict[str, Any],
+        tag_key: str,
+        tag_value: str,
+    ) -> tuple[str, str]:
         limit = max(1, min(int(payload.get("limit", 10)), 50))
-        area_filters = self._area_filters(payload)
         selector = self._overpass_tag_selector(tag_key, tag_value)
-        return "\n".join(
-            [
-                "[out:json][timeout:25];",
-                *area_filters,
-                "(",
-                f"  node{selector}(area.searchArea);",
-                f"  way{selector}(area.searchArea);",
-                f"  relation{selector}(area.searchArea);",
-                ");",
-                f"out center {limit};",
-            ]
+        timeout = self._overpass_timeout_seconds()
+        bbox = self._bbox_for_payload(payload)
+        if bbox:
+            south, west, north, east = bbox
+            return (
+                "\n".join(
+                    [
+                        f"[out:json][timeout:{timeout}];",
+                        "(",
+                        f"  node{selector}({south},{west},{north},{east});",
+                        f"  way{selector}({south},{west},{north},{east});",
+                        f"  relation{selector}({south},{west},{north},{east});",
+                        ");",
+                        f"out center {limit};",
+                    ]
+                ),
+                "bbox",
+            )
+
+        area_filters = self._area_filters(payload)
+        return (
+            "\n".join(
+                [
+                    f"[out:json][timeout:{timeout}];",
+                    *area_filters,
+                    "(",
+                    f"  node{selector}(area.searchArea);",
+                    f"  way{selector}(area.searchArea);",
+                    f"  relation{selector}(area.searchArea);",
+                    ");",
+                    f"out center {limit};",
+                ]
+            ),
+            "area",
         )
+
+    def _overpass_timeout_seconds(self) -> int:
+        if self.timeout_seconds <= 5:
+            return max(1, self.timeout_seconds)
+        return max(5, min(self.timeout_seconds - 5, 50))
+
+    def _bbox_for_payload(
+        self, payload: dict[str, Any]
+    ) -> tuple[float, float, float, float] | None:
+        country, state, city = self._location_parts(payload)
+        key = (
+            self._location_key(country),
+            self._location_key(state),
+            self._location_key(city),
+        )
+        return self.city_bounding_boxes.get(key)
 
     def _area_filters(self, payload: dict[str, Any]) -> list[str]:
         country, state, city = self._location_parts(payload)
@@ -506,8 +575,11 @@ class OpenStreetMapBusinessProvider:
         )
         return ", ".join(part for part in (street, locality) if part) or payload.get("location", "")
 
-    def _category_key(self, value: Any) -> str:
+    def _location_key(self, value: Any) -> str:
         return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+    def _category_key(self, value: Any) -> str:
+        return self._location_key(value)
 
     def _overpass_tag_selector(self, key: str, value: str) -> str:
         return f'["{self._escape_overpass(key)}"="{self._escape_overpass(value)}"]'

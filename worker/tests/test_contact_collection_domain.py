@@ -195,10 +195,10 @@ def test_openstreetmap_provider_parses_houston_restaurants_from_overpass() -> No
 
     overpass_query = parse_qs(captured_request["data"])["data"][0]
     assert captured_request["url"] == "https://overpass-api.de/api/interpreter"
+    assert captured_request["timeout"] == 1
     assert '["amenity"="restaurant"]' in overpass_query
-    assert '["name"="Houston"]' in overpass_query
-    assert '["name"="Texas"]' in overpass_query
-    assert '["name"="United States"]' in overpass_query
+    assert "(29.52,-95.82,30.12,-95.0)" in overpass_query
+    assert "area.searchArea" not in overpass_query
     assert "Restaurants Restaurants" not in overpass_query
     assert "nominatim.openstreetmap.org" not in captured_request["url"]
     assert len(businesses) == 3
@@ -252,9 +252,8 @@ def test_openstreetmap_provider_parses_ikeja_restaurants_from_overpass_fixture()
 
     overpass_query = parse_qs(captured_request["data"])["data"][0]
     assert '["amenity"="restaurant"]' in overpass_query
-    assert '["name"="Ikeja"]' in overpass_query
-    assert '["name"="Lagos"]' in overpass_query
-    assert '["name"="Nigeria"]' in overpass_query
+    assert "(6.55,3.28,6.66,3.43)" in overpass_query
+    assert "area.searchArea" not in overpass_query
     assert businesses[0].name == "Ikeja Kitchen"
     assert businesses[0].source_url == "https://www.openstreetmap.org/node/1001"
     assert businesses[0].phone == "+234 800 123 4567"
