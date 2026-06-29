@@ -1,11 +1,16 @@
 import asyncio
 import json
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 from collectors.extraction import contacts_from_public_html, social_profiles_from_public_html
 from collectors.models import RawBusiness
 from collectors.normalization import deterministic_business_identity, normalize_business
-from collectors.providers import OpenStreetMapBusinessProvider, PayloadBusinessProvider, ProviderError
+from collectors.providers import (
+    OpenStreetMapBusinessProvider,
+    PayloadBusinessProvider,
+    ProviderError,
+)
 
 
 class FakeHttpResponse:
@@ -123,28 +128,56 @@ def test_payload_provider_does_not_convert_search_query_to_manual_business() -> 
     assert businesses == []
 
 
-def test_openstreetmap_provider_parses_successful_response() -> None:
+def test_openstreetmap_provider_parses_houston_restaurants_from_overpass() -> None:
     provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
-    response_payload = [
-        {
-            "osm_type": "node",
-            "osm_id": 123,
-            "name": "Example Restaurant",
-            "display_name": "Example Restaurant, Houston, Texas, United States",
-            "type": "restaurant",
-            "address": {
-                "city": "Houston",
-                "state": "Texas",
-                "country": "United States",
+    response_payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 123,
+                "lat": 29.7604,
+                "lon": -95.3698,
+                "tags": {
+                    "amenity": "restaurant",
+                    "name": "Example Restaurant",
+                    "website": "https://example-restaurant.test",
+                    "phone": "+1 555 123 4567",
+                    "addr:housenumber": "123",
+                    "addr:street": "Main Street",
+                    "addr:city": "Houston",
+                    "addr:state": "Texas",
+                    "addr:country": "United States",
+                },
             },
-            "extratags": {
-                "website": "https://example-restaurant.test",
-                "phone": "+1 555 123 4567",
+            {
+                "type": "way",
+                "id": 456,
+                "center": {"lat": 29.761, "lon": -95.37},
+                "tags": {
+                    "amenity": "restaurant",
+                    "name": "Way Restaurant",
+                },
             },
-        }
-    ]
+            {
+                "type": "relation",
+                "id": 789,
+                "center": {"lat": 29.762, "lon": -95.371},
+                "tags": {
+                    "amenity": "restaurant",
+                    "name": "Relation Restaurant",
+                },
+            },
+        ]
+    }
+    captured_request = {}
 
-    with patch("collectors.providers.urlopen", return_value=FakeHttpResponse(response_payload)):
+    def fake_urlopen(request, timeout):
+        captured_request["url"] = request.full_url
+        captured_request["data"] = request.data.decode("utf-8")
+        captured_request["timeout"] = timeout
+        return FakeHttpResponse(response_payload)
+
+    with patch("collectors.providers.urlopen", side_effect=fake_urlopen):
         businesses = asyncio.run(
             provider.search(
                 {
@@ -160,6 +193,15 @@ def test_openstreetmap_provider_parses_successful_response() -> None:
             )
         )
 
+    overpass_query = parse_qs(captured_request["data"])["data"][0]
+    assert captured_request["url"] == "https://overpass-api.de/api/interpreter"
+    assert '["amenity"="restaurant"]' in overpass_query
+    assert '["name"="Houston"]' in overpass_query
+    assert '["name"="Texas"]' in overpass_query
+    assert '["name"="United States"]' in overpass_query
+    assert "Restaurants Restaurants" not in overpass_query
+    assert "nominatim.openstreetmap.org" not in captured_request["url"]
+    assert len(businesses) == 3
     assert businesses[0].name == "Example Restaurant"
     assert businesses[0].source_type == "directory"
     assert businesses[0].source_url == "https://www.openstreetmap.org/node/123"
@@ -168,10 +210,63 @@ def test_openstreetmap_provider_parses_successful_response() -> None:
     assert businesses[0].city == "Houston"
 
 
+def test_openstreetmap_provider_parses_ikeja_restaurants_from_overpass_fixture() -> None:
+    provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
+    response_payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 1001,
+                "tags": {
+                    "amenity": "restaurant",
+                    "name": "Ikeja Kitchen",
+                    "contact:phone": "+234 800 123 4567",
+                    "addr:city": "Ikeja",
+                    "addr:state": "Lagos",
+                    "addr:country": "Nigeria",
+                },
+            }
+        ]
+    }
+    captured_request = {}
+
+    def fake_urlopen(request, timeout):
+        captured_request["data"] = request.data.decode("utf-8")
+        return FakeHttpResponse(response_payload)
+
+    with patch("collectors.providers.urlopen", side_effect=fake_urlopen):
+        businesses = asyncio.run(
+            provider.search(
+                {
+                    "request_id": "request-2",
+                    "query": "Restaurants",
+                    "category": "Restaurants",
+                    "location": "Ikeja, Lagos, Nigeria",
+                    "country": "Nigeria",
+                    "state": "Lagos",
+                    "city": "Ikeja",
+                    "limit": 20,
+                }
+            )
+        )
+
+    overpass_query = parse_qs(captured_request["data"])["data"][0]
+    assert '["amenity"="restaurant"]' in overpass_query
+    assert '["name"="Ikeja"]' in overpass_query
+    assert '["name"="Lagos"]' in overpass_query
+    assert '["name"="Nigeria"]' in overpass_query
+    assert businesses[0].name == "Ikeja Kitchen"
+    assert businesses[0].source_url == "https://www.openstreetmap.org/node/1001"
+    assert businesses[0].phone == "+234 800 123 4567"
+    assert businesses[0].country == "Nigeria"
+    assert businesses[0].state == "Lagos"
+    assert businesses[0].city == "Ikeja"
+
+
 def test_openstreetmap_provider_reports_empty_response() -> None:
     provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
 
-    with patch("collectors.providers.urlopen", return_value=FakeHttpResponse([])):
+    with patch("collectors.providers.urlopen", return_value=FakeHttpResponse({"elements": []})):
         try:
             asyncio.run(
                 provider.search(
@@ -193,7 +288,10 @@ def test_openstreetmap_provider_reports_empty_response() -> None:
 def test_openstreetmap_provider_reports_filtered_all_results() -> None:
     provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
 
-    with patch("collectors.providers.urlopen", return_value=FakeHttpResponse([{"osm_id": 123}])):
+    with patch(
+        "collectors.providers.urlopen",
+        return_value=FakeHttpResponse({"elements": [{"type": "node", "id": 123}]}),
+    ):
         try:
             asyncio.run(
                 provider.search(

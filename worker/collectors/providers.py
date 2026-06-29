@@ -66,9 +66,7 @@ class PayloadBusinessProvider:
                 phone=contact.get("phone"),
                 linkedin_url=contact.get("linkedin_url"),
                 source_url=(
-                    contact.get("source_url")
-                    or item.get("source_url")
-                    or item.get("website", "")
+                    contact.get("source_url") or item.get("source_url") or item.get("website", "")
                 ),
             )
             for contact in item.get("contacts", [])
@@ -79,9 +77,7 @@ class PayloadBusinessProvider:
             if profile.get("platform") and profile.get("url")
         ]
         source_url = (
-            item.get("source_url")
-            or item.get("website")
-            or root_payload.get("source_url", "")
+            item.get("source_url") or item.get("website") or root_payload.get("source_url", "")
         )
         return RawBusiness(
             name=(
@@ -108,57 +104,90 @@ class PayloadBusinessProvider:
 
 
 class OpenStreetMapBusinessProvider:
-    """Public business search provider backed by OpenStreetMap Nominatim."""
+    """Public business discovery provider backed by OpenStreetMap Overpass."""
 
     name = "openstreetmap"
+    endpoint = "https://overpass-api.de/api/interpreter"
+    category_tags = {
+        "accountants": ("office", "accountant"),
+        "accounting": ("office", "accountant"),
+        "atm": ("amenity", "atm"),
+        "atms": ("amenity", "atm"),
+        "bank": ("amenity", "bank"),
+        "banks": ("amenity", "bank"),
+        "bar": ("amenity", "bar"),
+        "bars": ("amenity", "bar"),
+        "cafe": ("amenity", "cafe"),
+        "cafes": ("amenity", "cafe"),
+        "clinic": ("amenity", "clinic"),
+        "clinics": ("amenity", "clinic"),
+        "dentist": ("amenity", "dentist"),
+        "dentists": ("amenity", "dentist"),
+        "doctors": ("amenity", "doctors"),
+        "gym": ("leisure", "fitness_centre"),
+        "gyms": ("leisure", "fitness_centre"),
+        "hospital": ("amenity", "hospital"),
+        "hospitals": ("amenity", "hospital"),
+        "hotel": ("tourism", "hotel"),
+        "hotels": ("tourism", "hotel"),
+        "law firm": ("office", "lawyer"),
+        "law firms": ("office", "lawyer"),
+        "lawyer": ("office", "lawyer"),
+        "lawyers": ("office", "lawyer"),
+        "pharmacy": ("amenity", "pharmacy"),
+        "pharmacies": ("amenity", "pharmacy"),
+        "restaurant": ("amenity", "restaurant"),
+        "restaurants": ("amenity", "restaurant"),
+        "school": ("amenity", "school"),
+        "schools": ("amenity", "school"),
+        "supermarket": ("shop", "supermarket"),
+        "supermarkets": ("shop", "supermarket"),
+    }
 
     def __init__(self, user_agent: str, timeout_seconds: int = 10) -> None:
         self.user_agent = user_agent
         self.timeout_seconds = timeout_seconds
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
-        query = " ".join(
-            value
-            for value in (
-                payload.get("query"),
-                payload.get("category"),
-                payload.get("location"),
-            )
-            if value
-        )
+        tag_key, tag_value = self._tag_for_payload(payload)
+        query = self._build_overpass_query(payload, tag_key, tag_value)
         limit = int(payload.get("limit", 10))
-        if not query:
-            return []
-        params = urlencode(
-            {
-                "format": "jsonv2",
-                "q": query,
-                "limit": max(1, min(limit, 50)),
-                "addressdetails": 1,
-                "extratags": 1,
-            }
-        )
-        url = f"https://nominatim.openstreetmap.org/search?{params}"
         logger.info(
             "provider_request",
             extra={
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
-                "query": query,
+                "endpoint": self.endpoint,
+                "overpass_query": query,
+                "osm_tag_key": tag_key,
+                "osm_tag_value": tag_value,
                 "limit": max(1, min(limit, 50)),
-                "request_url": url,
             },
         )
-        return await asyncio.to_thread(self._search_sync, url, payload)
+        return await asyncio.to_thread(self._search_sync, query, payload)
 
-    def _search_sync(self, url: str, payload: dict[str, Any]) -> list[RawBusiness]:
-        request = Request(url, headers={"User-Agent": self.user_agent})
+    def _search_sync(self, query: str, payload: dict[str, Any]) -> list[RawBusiness]:
+        request = Request(
+            self.endpoint,
+            data=urlencode({"data": query}).encode("utf-8"),
+            headers={
+                "User-Agent": self.user_agent,
+                "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+            },
+            method="POST",
+        )
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 status = getattr(response, "status", 200)
                 body = response.read().decode("utf-8")
         except HTTPError as exc:
-            code = "HTTP_429" if exc.code == 429 else "HTTP_5XX" if exc.code >= 500 else "PROVIDER_FAILURE"
+            code = (
+                "HTTP_429"
+                if exc.code == 429
+                else "HTTP_5XX"
+                if exc.code >= 500
+                else "PROVIDER_FAILURE"
+            )
             logger.warning(
                 "provider_response_failed",
                 extra={
@@ -166,6 +195,7 @@ class OpenStreetMapBusinessProvider:
                     "provider": self.name,
                     "status": exc.code,
                     "error_code": code,
+                    "endpoint": self.endpoint,
                 },
             )
             raise ProviderError(
@@ -175,9 +205,19 @@ class OpenStreetMapBusinessProvider:
                 self.name,
             ) from exc
         except TimeoutError as exc:
-            raise ProviderError("NETWORK_TIMEOUT", "Provider request timed out.", True, self.name) from exc
+            raise ProviderError(
+                "NETWORK_TIMEOUT",
+                "Provider request timed out.",
+                True,
+                self.name,
+            ) from exc
         except URLError as exc:
-            raise ProviderError("DNS_FAILURE", "Provider could not be resolved.", True, self.name) from exc
+            raise ProviderError(
+                "DNS_FAILURE",
+                "Provider could not be resolved.",
+                True,
+                self.name,
+            ) from exc
 
         logger.info(
             "provider_raw_response",
@@ -185,13 +225,14 @@ class OpenStreetMapBusinessProvider:
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "request_url": url,
+                "endpoint": self.endpoint,
+                "overpass_query": query,
                 "raw_body": truncate_for_log(body),
                 "raw_body_length": len(body),
             },
         )
         try:
-            results = json.loads(body)
+            response_payload = json.loads(body)
         except json.JSONDecodeError as exc:
             raise ProviderError(
                 "INVALID_PROVIDER_RESPONSE",
@@ -199,26 +240,31 @@ class OpenStreetMapBusinessProvider:
                 False,
                 self.name,
             ) from exc
-        if not isinstance(results, list):
+        if not isinstance(response_payload, dict) or not isinstance(
+            response_payload.get("elements"),
+            list,
+        ):
             raise ProviderError(
                 "INVALID_PROVIDER_RESPONSE",
                 "Provider returned an invalid response shape.",
                 False,
                 self.name,
             )
-        parsed = self._parse_results(results, payload, url, status)
+        elements = response_payload["elements"]
+        parsed = self._parse_results(elements, payload, query, status)
         logger.info(
             "provider_response",
             extra={
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "request_url": url,
-                "records_parsed": len(results),
+                "endpoint": self.endpoint,
+                "raw_response_size": len(body),
+                "parsed_objects": len(elements),
                 "businesses_returned": len(parsed),
             },
         )
-        if not results:
+        if not elements:
             raise ProviderError(
                 "EMPTY_PROVIDER_RESPONSE",
                 "Provider returned an empty result set.",
@@ -238,7 +284,7 @@ class OpenStreetMapBusinessProvider:
         self,
         results: list[Any],
         payload: dict[str, Any],
-        url: str,
+        query: str,
         status: int,
     ) -> list[RawBusiness]:
         businesses: list[RawBusiness] = []
@@ -246,7 +292,7 @@ class OpenStreetMapBusinessProvider:
             if not isinstance(item, dict):
                 self._log_candidate_decision(
                     payload,
-                    url,
+                    query,
                     status,
                     index,
                     False,
@@ -255,17 +301,18 @@ class OpenStreetMapBusinessProvider:
                 )
                 continue
 
-            display_name = item.get("display_name")
-            name = item.get("name")
-            osm_id = item.get("osm_id")
-            if not display_name and not name:
+            tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+            name = tags.get("name") or tags.get("brand") or tags.get("operator")
+            osm_id = item.get("id")
+            osm_type = item.get("type")
+            if not name:
                 self._log_candidate_decision(
                     payload,
-                    url,
+                    query,
                     status,
                     index,
                     False,
-                    "missing_name_and_display_name",
+                    "missing_business_name",
                     {"osm_id": osm_id},
                 )
                 continue
@@ -274,14 +321,14 @@ class OpenStreetMapBusinessProvider:
             businesses.append(business)
             self._log_candidate_decision(
                 payload,
-                url,
+                query,
                 status,
                 index,
                 True,
                 "accepted",
                 {
                     "osm_id": osm_id,
-                    "osm_type": item.get("osm_type"),
+                    "osm_type": osm_type,
                     "business_name": business.name,
                     "source_url": business.source_url,
                 },
@@ -291,7 +338,7 @@ class OpenStreetMapBusinessProvider:
     def _log_candidate_decision(
         self,
         payload: dict[str, Any],
-        url: str,
+        query: str,
         status: int,
         index: int,
         accepted: bool,
@@ -304,7 +351,8 @@ class OpenStreetMapBusinessProvider:
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "request_url": url,
+                "endpoint": self.endpoint,
+                "overpass_query": query,
                 "candidate_index": index,
                 "accepted": accepted,
                 "reason": reason,
@@ -313,34 +361,35 @@ class OpenStreetMapBusinessProvider:
         )
 
     def _from_osm(self, item: dict[str, Any], payload: dict[str, Any]) -> RawBusiness:
-        address = item.get("address", {})
-        extratags = item.get("extratags", {})
-        website = normalize_url(extratags.get("website") or extratags.get("contact:website"))
-        phone = extratags.get("phone") or extratags.get("contact:phone") or ""
-        email = extratags.get("email") or extratags.get("contact:email")
-        display_name = item.get("display_name", "")
-        osm_type = item.get("osm_type", "node")
-        osm_id = item.get("osm_id", "")
+        tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+        website = normalize_url(tags.get("website") or tags.get("contact:website"))
+        phone = tags.get("phone") or tags.get("contact:phone") or ""
+        email = tags.get("email") or tags.get("contact:email")
+        osm_type = item.get("type", "node")
+        osm_id = item.get("id", "")
         source_url = f"https://www.openstreetmap.org/{osm_type}/{osm_id}" if osm_id else ""
+        address = self._address_from_tags(tags, payload)
         return RawBusiness(
-            name=item.get("name")
-            or display_name.split(",", 1)[0]
-            or payload.get("query", ""),
+            name=(
+                tags.get("name")
+                or tags.get("brand")
+                or tags.get("operator")
+                or payload.get("query", "")
+            ),
             industry=payload.get("category", payload.get("query", "Unknown")),
             website=website,
             phone=phone,
             email=email,
-            country=payload.get("country") or address.get("country", ""),
-            state=payload.get("state") or address.get("state", ""),
-            city=(
-                payload.get("city")
-                or address.get("city")
-                or address.get("town")
-                or address.get("village")
-                or ""
+            country=payload.get("country") or tags.get("addr:country", ""),
+            state=payload.get("state") or tags.get("addr:state", ""),
+            city=payload.get("city") or tags.get("addr:city") or tags.get("addr:town") or "",
+            address=address,
+            description=(
+                tags.get("description")
+                or tags.get("amenity")
+                or tags.get("tourism")
+                or tags.get("shop")
             ),
-            address=display_name,
-            description=item.get("type"),
             source_type="directory",
             source_url=source_url or "https://www.openstreetmap.org",
             trust_tier="C",
@@ -358,6 +407,113 @@ class OpenStreetMapBusinessProvider:
             else [],
             social_profiles=[],
         )
+
+    def _tag_for_payload(self, payload: dict[str, Any]) -> tuple[str, str]:
+        candidates = [payload.get("category"), payload.get("query")]
+        for candidate in candidates:
+            key = self._category_key(candidate)
+            if key in self.category_tags:
+                return self.category_tags[key]
+        raise ProviderError(
+            "UNSUPPORTED_CATEGORY",
+            "OpenStreetMap provider does not have an OSM tag mapping for this category.",
+            False,
+            self.name,
+        )
+
+    def _build_overpass_query(self, payload: dict[str, Any], tag_key: str, tag_value: str) -> str:
+        limit = max(1, min(int(payload.get("limit", 10)), 50))
+        area_filters = self._area_filters(payload)
+        selector = self._overpass_tag_selector(tag_key, tag_value)
+        return "\n".join(
+            [
+                "[out:json][timeout:25];",
+                *area_filters,
+                "(",
+                f"  node{selector}(area.searchArea);",
+                f"  way{selector}(area.searchArea);",
+                f"  relation{selector}(area.searchArea);",
+                ");",
+                f"out center {limit};",
+            ]
+        )
+
+    def _area_filters(self, payload: dict[str, Any]) -> list[str]:
+        country, state, city = self._location_parts(payload)
+        lines: list[str] = []
+        if country:
+            lines.append(
+                f'area["boundary"="administrative"]["name"="{self._escape_overpass(country)}"]'
+                "->.countryArea;"
+            )
+        if state:
+            parent = "(area.countryArea)" if country else ""
+            lines.append(
+                f'area["boundary"="administrative"]["name"="{self._escape_overpass(state)}"]'
+                f"{parent}->.regionArea;"
+            )
+        if city:
+            parent = "(area.regionArea)" if state else "(area.countryArea)" if country else ""
+            lines.append(
+                f'area["boundary"="administrative"]["name"="{self._escape_overpass(city)}"]'
+                f"{parent}->.searchArea;"
+            )
+        elif state:
+            lines.append(".regionArea->.searchArea;")
+        elif country:
+            lines.append(".countryArea->.searchArea;")
+        else:
+            raise ProviderError(
+                "INVALID_PROVIDER_QUERY",
+                "OpenStreetMap provider requires a city, state, or country search area.",
+                False,
+                self.name,
+            )
+        return lines
+
+    def _location_parts(self, payload: dict[str, Any]) -> tuple[str, str, str]:
+        location_parts = [
+            part.strip() for part in str(payload.get("location") or "").split(",") if part.strip()
+        ]
+        country = str(payload.get("country") or "").strip()
+        state = str(payload.get("state") or "").strip()
+        city = str(payload.get("city") or "").strip()
+        if not city and location_parts:
+            city = location_parts[0]
+        if not state and len(location_parts) >= 2:
+            state = location_parts[1]
+        if not country and len(location_parts) >= 3:
+            country = location_parts[-1]
+        return country, state, city
+
+    def _address_from_tags(self, tags: dict[str, Any], payload: dict[str, Any]) -> str:
+        street = " ".join(
+            part
+            for part in (
+                tags.get("addr:housenumber"),
+                tags.get("addr:street"),
+            )
+            if part
+        )
+        locality = ", ".join(
+            part
+            for part in (
+                tags.get("addr:city") or tags.get("addr:town") or payload.get("city"),
+                tags.get("addr:state") or payload.get("state"),
+                tags.get("addr:country") or payload.get("country"),
+            )
+            if part
+        )
+        return ", ".join(part for part in (street, locality) if part) or payload.get("location", "")
+
+    def _category_key(self, value: Any) -> str:
+        return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+    def _overpass_tag_selector(self, key: str, value: str) -> str:
+        return f'["{self._escape_overpass(key)}"="{self._escape_overpass(value)}"]'
+
+    def _escape_overpass(self, value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 class CompositeBusinessProvider:
