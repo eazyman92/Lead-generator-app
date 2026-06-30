@@ -9,6 +9,8 @@ class RawContact:
     phone: str | None = None
     linkedin_url: str | None = None
     source_url: str = ""
+    is_decision_maker: bool = False
+    priority_score: int = 0
 
 
 @dataclass(frozen=True)

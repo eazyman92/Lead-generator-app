@@ -33,17 +33,14 @@ class CollectorRepository:
     ) -> None:
         payload = await self.load_job_payload(session, job_id)
         payload["progress"] = progress
-        statement = (
-            text(
-                """
+        statement = text(
+            """
                 UPDATE background_jobs
                 SET payload = :payload,
                     updated_at = now()
                 WHERE id = :job_id
                 """
-            )
-            .bindparams(bindparam("payload", type_=JSONB))
-        )
+        ).bindparams(bindparam("payload", type_=JSONB))
         await session.execute(statement, {"job_id": UUID(job_id), "payload": payload})
 
     async def audit(
@@ -54,9 +51,8 @@ class CollectorRepository:
         user_id: str | None,
         metadata: dict[str, Any],
     ) -> None:
-        statement = (
-            text(
-                """
+        statement = text(
+            """
                 INSERT INTO audit_logs (
                     id, user_id, event_type, ip_address, request_id, metadata, created_at
                 )
@@ -64,9 +60,7 @@ class CollectorRepository:
                     :id, :user_id, :event_type, NULL, :request_id, :metadata, now()
                 )
                 """
-            )
-            .bindparams(bindparam("metadata", type_=JSONB))
-        )
+        ).bindparams(bindparam("metadata", type_=JSONB))
         await session.execute(
             statement,
             {
@@ -213,6 +207,8 @@ class CollectorRepository:
             "email": contact.email,
             "phone": contact.phone,
             "linkedin_url": contact.linkedin_url,
+            "is_decision_maker": contact.is_decision_maker,
+            "priority_score": contact.priority_score,
             "source_url": contact.source_url,
             "collection_timestamp": datetime.now(timezone.utc),
         }
@@ -226,6 +222,8 @@ class CollectorRepository:
                         email = :email,
                         phone = :phone,
                         linkedin_url = :linkedin_url,
+                        is_decision_maker = :is_decision_maker,
+                        priority_score = :priority_score,
                         source_url = :source_url,
                         collection_timestamp = :collection_timestamp
                     WHERE id = :id
@@ -246,7 +244,8 @@ class CollectorRepository:
                 )
                 VALUES (
                     :id, :business_id, :source_id, :full_name, :role, :email, :phone,
-                    :linkedin_url, false, 0, :source_url, :collection_timestamp, now()
+                    :linkedin_url, :is_decision_maker, :priority_score, :source_url,
+                    :collection_timestamp, now()
                 )
                 """
             ),

@@ -117,6 +117,7 @@ class FakeProvider:
                         role="Sales",
                         email="sales@example.com",
                         source_url="https://example.com",
+                        is_decision_maker=False,
                     )
                 ],
                 social_profiles=[
@@ -165,6 +166,67 @@ def test_contact_collection_service_persists_business_contact_source_and_progres
     assert {profile.platform for profile in repository.social_profiles} == {"linkedin"}
     assert "contact_collection_completed" in repository.audit_events
     assert repository.progress_updates[-1]["completion_percent"] == 100
+
+
+def test_contact_collection_service_preserves_decision_maker_metadata() -> None:
+    payload = {
+        "request_id": "request-1",
+        "created_by_user_id": str(uuid4()),
+        "data": {
+            "query": "restaurants",
+            "location": "Houston",
+            "category": "restaurants",
+            "limit": 10,
+        },
+    }
+    repository = FakeRepository(payload)
+
+    class DecisionMakerProvider:
+        async def search(self, payload):
+            return [
+                RawBusiness(
+                    name="Founder Cafe",
+                    industry="Restaurants",
+                    website="",
+                    phone="",
+                    email=None,
+                    country="United States",
+                    state="Texas",
+                    city="Houston",
+                    address="123 Main",
+                    description=None,
+                    source_type="directory",
+                    source_url="https://example.com",
+                    trust_tier="B",
+                    confidence_score=80,
+                    contacts=[
+                        RawContact(
+                            full_name="Jane Smith",
+                            role="CEO",
+                            email="jane@example.com",
+                            source_url="https://example.com/about",
+                            is_decision_maker=True,
+                            priority_score=95,
+                        )
+                    ],
+                )
+            ]
+
+    service = ContactCollectionService(
+        SimpleNamespace(
+            contact_collection_max_limit=50,
+            worker_user_agent="test",
+            worker_http_timeout_seconds=1,
+        ),
+        repository,
+        DecisionMakerProvider(),
+    )
+
+    asyncio.run(service.run(build_job()))
+
+    assert repository.contacts[0].full_name == "Jane Smith"
+    assert repository.contacts[0].is_decision_maker is True
+    assert repository.contacts[0].priority_score == 95
 
 
 def test_contact_collection_service_fails_explicitly_when_provider_returns_zero_results() -> None:

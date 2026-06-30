@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from collectors.extraction import contacts_from_public_html, social_profiles_from_public_html
@@ -10,6 +11,7 @@ from collectors.normalization import normalize_business, normalize_url
 from collectors.providers import (
     BusinessSearchProvider,
     CompositeBusinessProvider,
+    DataForSEOGoogleMapsProvider,
     OpenStreetMapBusinessProvider,
     PayloadBusinessProvider,
     ProviderError,
@@ -157,7 +159,9 @@ class ContactCollectionService:
                     {"retryable": True},
                 )
                 await session.commit()
-                raise ContactCollectionError("PROVIDER_FAILURE", "Business search provider failed.", True) from exc
+                raise ContactCollectionError(
+                    "PROVIDER_FAILURE", "Business search provider failed.", True
+                ) from exc
             except Exception as exc:
                 await self._record_failure(
                     session,
@@ -170,7 +174,9 @@ class ContactCollectionService:
                     {"retryable": True},
                 )
                 await session.commit()
-                raise ContactCollectionError("PROVIDER_FAILURE", "Business search provider failed.", True) from exc
+                raise ContactCollectionError(
+                    "PROVIDER_FAILURE", "Business search provider failed.", True
+                ) from exc
 
             logger.info(
                 "contact_collection_provider_results",
@@ -462,10 +468,16 @@ class ContactCollectionService:
                 "Source could not be resolved.",
                 True,
             ) from exc
-        return contacts_from_public_html(html, source_url), social_profiles_from_public_html(
-            html,
-            source_url,
-        )
+        contacts = contacts_from_public_html(html, source_url)
+        profiles = social_profiles_from_public_html(html, source_url)
+        for enrichment_url in self._candidate_enrichment_urls(source_url):
+            try:
+                extra_html = await asyncio.to_thread(self._fetch_public_html, enrichment_url)
+            except (ContactCollectionError, HTTPError, TimeoutError, URLError):
+                continue
+            contacts.extend(contacts_from_public_html(extra_html, enrichment_url))
+            profiles.extend(social_profiles_from_public_html(extra_html, enrichment_url))
+        return contacts, profiles
 
     def _fetch_public_html(self, source_url: str) -> str:
         request = Request(source_url, headers={"User-Agent": self.settings.worker_user_agent})
@@ -480,8 +492,29 @@ class ContactCollectionService:
             return response.read(1_000_000).decode("utf-8", errors="ignore")
 
     def _source_urls(self, business: RawBusiness) -> list[str]:
-        urls = [business.source_url, business.website]
-        return [normalize_url(url) for url in urls if normalize_url(url)]
+        urls = [business.website]
+        if business.source_url and not self._is_provider_source_url(business.source_url):
+            urls.append(business.source_url)
+        seen: set[str] = set()
+        normalized_urls: list[str] = []
+        for url in urls:
+            normalized = normalize_url(url)
+            if normalized and normalized not in seen:
+                normalized_urls.append(normalized)
+                seen.add(normalized)
+        return normalized_urls
+
+    def _candidate_enrichment_urls(self, source_url: str) -> list[str]:
+        parsed = urlparse(source_url)
+        if not parsed.scheme or not parsed.netloc:
+            return []
+        candidates = ["contact", "contact-us", "about", "about-us", "team", "leadership"]
+        base_url = f"{parsed.scheme}://{parsed.netloc}/"
+        return [normalize_url(urljoin(base_url, candidate)) for candidate in candidates]
+
+    def _is_provider_source_url(self, source_url: str) -> bool:
+        hostname = (urlparse(normalize_url(source_url)).hostname or "").lower()
+        return hostname.endswith("google.com") or hostname.endswith("openstreetmap.org")
 
     def _validate_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = dict(payload.get("data") or payload)
@@ -525,13 +558,21 @@ def build_contact_collection_handler(settings: "Settings") -> ContactCollectionH
     from collectors.repository import CollectorRepository
 
     repository = CollectorRepository(settings.database_url)
-    provider = CompositeBusinessProvider(
-        [
-            PayloadBusinessProvider(),
-            OpenStreetMapBusinessProvider(
-                settings.worker_user_agent,
+    providers: list[BusinessSearchProvider] = [PayloadBusinessProvider()]
+    if settings.dataforseo_enabled and settings.dataforseo_login and settings.dataforseo_password:
+        providers.append(
+            DataForSEOGoogleMapsProvider(
+                settings.dataforseo_login,
+                settings.dataforseo_password,
                 settings.worker_http_timeout_seconds,
-            ),
-        ]
+                settings.dataforseo_default_depth,
+            )
+        )
+    providers.append(
+        OpenStreetMapBusinessProvider(
+            settings.worker_user_agent,
+            settings.worker_http_timeout_seconds,
+        )
     )
+    provider = CompositeBusinessProvider(providers)
     return ContactCollectionHandler(ContactCollectionService(settings, repository, provider))

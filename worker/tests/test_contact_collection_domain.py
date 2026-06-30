@@ -7,6 +7,7 @@ from collectors.extraction import contacts_from_public_html, social_profiles_fro
 from collectors.models import RawBusiness
 from collectors.normalization import deterministic_business_identity, normalize_business
 from collectors.providers import (
+    DataForSEOGoogleMapsProvider,
     OpenStreetMapBusinessProvider,
     PayloadBusinessProvider,
     ProviderError,
@@ -82,6 +83,24 @@ def test_contact_and_social_extraction_from_public_html() -> None:
     }
 
 
+def test_contact_extraction_marks_public_decision_makers() -> None:
+    html = """
+    <html>
+      <body>
+        <p>Jane Smith - CEO</p>
+        <p>Email info@example.com or call +1 (555) 123-4567.</p>
+      </body>
+    </html>
+    """
+
+    contacts = contacts_from_public_html(html, "https://example.com/about")
+
+    decision_makers = [contact for contact in contacts if contact.is_decision_maker]
+    assert decision_makers[0].full_name == "Jane Smith"
+    assert decision_makers[0].role == "CEO"
+    assert decision_makers[0].priority_score == 95
+
+
 def test_payload_provider_returns_payload_businesses() -> None:
     provider = PayloadBusinessProvider()
 
@@ -126,6 +145,82 @@ def test_payload_provider_does_not_convert_search_query_to_manual_business() -> 
     )
 
     assert businesses == []
+
+
+def test_dataforseo_provider_parses_google_maps_response() -> None:
+    provider = DataForSEOGoogleMapsProvider(
+        "login",
+        "password",
+        timeout_seconds=1,
+        default_depth=100,
+    )
+    response_payload = {
+        "tasks": [
+            {
+                "status_code": 20000,
+                "result": [
+                    {
+                        "items": [
+                            {
+                                "type": "maps_search",
+                                "title": "Example Restaurant",
+                                "category": "Restaurant",
+                                "phone": "+1 555 123 4567",
+                                "url": "https://example-restaurant.test",
+                                "domain": "example-restaurant.test",
+                                "address": "123 Main Street, Houston, TX",
+                                "place_id": "place-123",
+                                "cid": "cid-123",
+                                "rating": 4.6,
+                                "rating_count": 128,
+                                "address_info": {
+                                    "city": "Houston",
+                                    "region": "Texas",
+                                    "country_code": "US",
+                                },
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+    captured_request = {}
+
+    def fake_urlopen(request, timeout):
+        captured_request["url"] = request.full_url
+        captured_request["data"] = json.loads(request.data.decode("utf-8"))
+        captured_request["authorization"] = request.headers["Authorization"]
+        captured_request["timeout"] = timeout
+        return FakeHttpResponse(response_payload)
+
+    with patch("collectors.providers.urlopen", side_effect=fake_urlopen):
+        businesses = asyncio.run(
+            provider.search(
+                {
+                    "request_id": "request-1",
+                    "query": "Restaurants",
+                    "category": "Restaurants",
+                    "country": "United States",
+                    "state": "Texas",
+                    "city": "Houston",
+                    "location": "Houston, Texas, United States",
+                    "limit": 100,
+                }
+            )
+        )
+
+    assert captured_request["url"] == DataForSEOGoogleMapsProvider.endpoint
+    assert captured_request["data"][0]["keyword"] == "Restaurants"
+    assert captured_request["data"][0]["location_name"] == "Houston, Texas, United States"
+    assert captured_request["data"][0]["depth"] == 100
+    assert captured_request["authorization"].startswith("Basic ")
+    assert captured_request["timeout"] == 1
+    assert businesses[0].name == "Example Restaurant"
+    assert businesses[0].website == "https://example-restaurant.test"
+    assert businesses[0].phone == "+1 555 123 4567"
+    assert businesses[0].source_type == "dataforseo_google_maps"
+    assert businesses[0].contacts[0].phone == "+1 555 123 4567"
 
 
 def test_openstreetmap_provider_parses_houston_restaurants_from_overpass() -> None:

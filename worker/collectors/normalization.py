@@ -91,6 +91,8 @@ def normalize_contact(contact: RawContact) -> RawContact:
         phone=normalize_phone(contact.phone) or None,
         linkedin_url=normalize_url(contact.linkedin_url) or None,
         source_url=normalize_url(contact.source_url),
+        is_decision_maker=bool(contact.is_decision_maker),
+        priority_score=max(0, min(int(contact.priority_score), 100)),
     )
 
 

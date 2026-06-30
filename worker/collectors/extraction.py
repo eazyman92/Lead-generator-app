@@ -7,6 +7,22 @@ from collectors.normalization import normalize_url
 
 EMAIL_PATTERN = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+DECISION_MAKER_TITLES = (
+    "CEO",
+    "Chief Executive Officer",
+    "Founder",
+    "Co-Founder",
+    "Owner",
+    "Managing Director",
+    "President",
+    "Principal",
+    "Director",
+)
+DECISION_MAKER_PATTERN = re.compile(
+    r"\b(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*[-–|,]\s*"
+    r"(?P<role>CEO|Chief Executive Officer|Founder|Co-Founder|Owner|Managing Director|"
+    r"President|Principal|Director)\b"
+)
 SOCIAL_PATTERNS = {
     "linkedin": re.compile(r"https?://(?:www\.)?linkedin\.com/company/[^\s\"'<>]+", re.I),
     "facebook": re.compile(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", re.I),
@@ -42,19 +58,62 @@ def role_from_email(email: str) -> str:
     return "General Contact"
 
 
+def decision_maker_score(role: str | None) -> int:
+    role = (role or "").lower()
+    if "ceo" in role or "chief executive" in role:
+        return 95
+    if "founder" in role or "owner" in role:
+        return 90
+    if "managing director" in role or "president" in role:
+        return 85
+    if "principal" in role or "director" in role:
+        return 75
+    return 0
+
+
+def is_decision_maker_role(role: str | None) -> bool:
+    role = (role or "").lower()
+    return any(title.lower() in role for title in DECISION_MAKER_TITLES)
+
+
+def decision_makers_from_text(text: str, source_url: str) -> list[RawContact]:
+    contacts: list[RawContact] = []
+    seen: set[tuple[str, str]] = set()
+    for match in DECISION_MAKER_PATTERN.finditer(text):
+        name = match.group("name").strip()
+        role = match.group("role").strip()
+        key = (name.lower(), role.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        contacts.append(
+            RawContact(
+                full_name=name,
+                role=role,
+                source_url=source_url,
+                is_decision_maker=True,
+                priority_score=decision_maker_score(role),
+            )
+        )
+    return contacts
+
+
 def contacts_from_public_html(html: str, source_url: str) -> list[RawContact]:
     text = strip_tags(html)
     emails = sorted(set(EMAIL_PATTERN.findall(text)))
     phones = sorted(set(match.strip() for match in PHONE_PATTERN.findall(text)))
-    contacts: list[RawContact] = []
+    contacts: list[RawContact] = decision_makers_from_text(text, source_url)
     for email in emails:
+        role = role_from_email(email)
         contacts.append(
             RawContact(
                 full_name="Public Contact",
-                role=role_from_email(email),
+                role=role,
                 email=email,
                 phone=phones[0] if phones else None,
                 source_url=source_url,
+                is_decision_maker=is_decision_maker_role(role),
+                priority_score=decision_maker_score(role),
             )
         )
     if not contacts and phones:

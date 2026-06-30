@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     worker_user_agent: str = "LeadGeneratorAppWorker/0.1"
     contact_collection_provider: str = "osm"
     contact_collection_max_limit: int = 50
+    dataforseo_enabled: bool = False
+    dataforseo_login: str | None = None
+    dataforseo_password: str | None = None
+    dataforseo_default_depth: int = 100
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

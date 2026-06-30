@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -100,6 +101,289 @@ class PayloadBusinessProvider:
             confidence_score=int(item.get("confidence_score", 65)),
             contacts=contacts,
             social_profiles=profiles,
+        )
+
+
+class DataForSEOGoogleMapsProvider:
+    """Commercial Google Maps discovery provider backed by DataForSEO."""
+
+    name = "dataforseo_google_maps"
+    endpoint = "https://api.dataforseo.com/v3/serp/google/maps/live/advanced"
+
+    def __init__(
+        self,
+        login: str,
+        password: str,
+        timeout_seconds: int = 30,
+        default_depth: int = 100,
+    ) -> None:
+        self.login = login
+        self.password = password
+        self.timeout_seconds = timeout_seconds
+        self.default_depth = max(1, min(int(default_depth), 700))
+
+    async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
+        request_payload = self._request_payload(payload)
+        logger.info(
+            "provider_request",
+            extra={
+                "request_id": payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "endpoint": self.endpoint,
+                "keyword": request_payload[0]["keyword"],
+                "location_name": request_payload[0]["location_name"],
+                "depth": request_payload[0]["depth"],
+                "http_timeout_seconds": self.timeout_seconds,
+            },
+        )
+        return await asyncio.to_thread(self._search_sync, request_payload, payload)
+
+    def _request_payload(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        keyword = str(payload.get("category") or payload.get("query") or "").strip()
+        location_name = (
+            ", ".join(
+                part
+                for part in (
+                    payload.get("city"),
+                    payload.get("state"),
+                    payload.get("country"),
+                )
+                if part
+            )
+            or str(payload.get("location") or "").strip()
+        )
+        depth = max(1, min(int(payload.get("limit") or self.default_depth), 700))
+        if not keyword or not location_name:
+            raise ProviderError(
+                "INVALID_PROVIDER_QUERY",
+                "DataForSEO Google Maps provider requires a keyword and location.",
+                False,
+                self.name,
+            )
+        return [
+            {
+                "keyword": keyword,
+                "location_name": location_name,
+                "language_code": "en",
+                "depth": depth,
+            }
+        ]
+
+    def _search_sync(
+        self,
+        request_payload: list[dict[str, Any]],
+        root_payload: dict[str, Any],
+    ) -> list[RawBusiness]:
+        request = Request(
+            self.endpoint,
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Basic {self._auth_token()}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                status = getattr(response, "status", 200)
+                body = response.read().decode("utf-8")
+        except HTTPError as exc:
+            code = (
+                "HTTP_429"
+                if exc.code == 429
+                else "HTTP_5XX"
+                if exc.code >= 500
+                else "PROVIDER_FAILURE"
+            )
+            logger.warning(
+                "provider_response_failed",
+                extra={
+                    "request_id": root_payload.get("request_id", "unknown"),
+                    "provider": self.name,
+                    "status": exc.code,
+                    "error_code": code,
+                    "endpoint": self.endpoint,
+                },
+            )
+            raise ProviderError(
+                code,
+                "Provider request failed.",
+                exc.code == 429 or exc.code >= 500,
+                self.name,
+            ) from exc
+        except TimeoutError as exc:
+            raise ProviderError(
+                "NETWORK_TIMEOUT",
+                "Provider request timed out.",
+                True,
+                self.name,
+            ) from exc
+        except URLError as exc:
+            raise ProviderError(
+                "DNS_FAILURE",
+                "Provider could not be resolved.",
+                True,
+                self.name,
+            ) from exc
+
+        logger.info(
+            "provider_raw_response",
+            extra={
+                "request_id": root_payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "status": status,
+                "endpoint": self.endpoint,
+                "raw_body": truncate_for_log(body),
+                "raw_body_length": len(body),
+            },
+        )
+        try:
+            response_payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ProviderError(
+                "INVALID_PROVIDER_RESPONSE",
+                "Provider returned invalid JSON.",
+                False,
+                self.name,
+            ) from exc
+
+        items = self._extract_items(response_payload)
+        parsed = self._parse_items(items, root_payload)
+        logger.info(
+            "provider_response",
+            extra={
+                "request_id": root_payload.get("request_id", "unknown"),
+                "provider": self.name,
+                "status": status,
+                "endpoint": self.endpoint,
+                "raw_response_size": len(body),
+                "parsed_objects": len(items),
+                "businesses_returned": len(parsed),
+            },
+        )
+        if not items:
+            raise ProviderError(
+                "EMPTY_PROVIDER_RESPONSE",
+                "Provider returned an empty result set.",
+                False,
+                self.name,
+            )
+        if not parsed:
+            raise ProviderError(
+                "FILTERED_ALL_RESULTS",
+                "Provider results were parsed but no candidate was accepted.",
+                False,
+                self.name,
+            )
+        return parsed
+
+    def _auth_token(self) -> str:
+        return base64.b64encode(f"{self.login}:{self.password}".encode("utf-8")).decode("ascii")
+
+    def _extract_items(self, response_payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(response_payload, dict):
+            raise ProviderError(
+                "INVALID_PROVIDER_RESPONSE",
+                "Provider returned an invalid response shape.",
+                False,
+                self.name,
+            )
+        items: list[dict[str, Any]] = []
+        for task in response_payload.get("tasks") or []:
+            if not isinstance(task, dict):
+                continue
+            if int(task.get("status_code") or 20000) >= 40000:
+                raise ProviderError(
+                    "PROVIDER_FAILURE",
+                    str(task.get("status_message") or "Provider task failed."),
+                    True,
+                    self.name,
+                )
+            for result in task.get("result") or []:
+                if not isinstance(result, dict):
+                    continue
+                items.extend(item for item in result.get("items") or [] if isinstance(item, dict))
+        return items
+
+    def _parse_items(
+        self,
+        items: list[dict[str, Any]],
+        payload: dict[str, Any],
+    ) -> list[RawBusiness]:
+        businesses: list[RawBusiness] = []
+        for item in items:
+            title = item.get("title") or item.get("name")
+            if not title:
+                continue
+            business = self._from_dataforseo_item(item, payload)
+            businesses.append(business)
+            logger.info(
+                "provider_candidate_decision",
+                extra={
+                    "request_id": payload.get("request_id", "unknown"),
+                    "provider": self.name,
+                    "accepted": True,
+                    "reason": "accepted",
+                    "business_name": business.name,
+                    "place_id": item.get("place_id"),
+                    "cid": item.get("cid"),
+                    "source_url": business.source_url,
+                },
+            )
+        return businesses
+
+    def _from_dataforseo_item(self, item: dict[str, Any], payload: dict[str, Any]) -> RawBusiness:
+        address_info = (
+            item.get("address_info") if isinstance(item.get("address_info"), dict) else {}
+        )
+        website = normalize_url(item.get("url") or item.get("domain") or item.get("contact_url"))
+        phone = item.get("phone") or ""
+        source_url = item.get("check_url") or item.get("url") or ""
+        if not source_url and item.get("place_id"):
+            source_url = f"https://www.google.com/maps/place/?q=place_id:{item.get('place_id')}"
+        category = (
+            item.get("category") or payload.get("category") or payload.get("query") or "Unknown"
+        )
+        description_parts = [
+            part
+            for part in (
+                f"rating={item.get('rating')}" if item.get("rating") is not None else None,
+                f"reviews={item.get('rating_count')}"
+                if item.get("rating_count") is not None
+                else None,
+                f"cid={item.get('cid')}" if item.get("cid") else None,
+                f"place_id={item.get('place_id')}" if item.get("place_id") else None,
+            )
+            if part
+        ]
+        return RawBusiness(
+            name=str(item.get("title") or item.get("name")),
+            industry=str(category),
+            website=website,
+            phone=str(phone or ""),
+            email=None,
+            country=payload.get("country") or address_info.get("country_code") or "",
+            state=payload.get("state") or address_info.get("region") or "",
+            city=payload.get("city") or address_info.get("city") or "",
+            address=item.get("address")
+            or address_info.get("address")
+            or payload.get("location", ""),
+            description="; ".join(description_parts) or None,
+            source_type="dataforseo_google_maps",
+            source_url=source_url or website or "https://www.google.com/maps",
+            trust_tier="B",
+            confidence_score=80,
+            contacts=[
+                RawContact(
+                    full_name="Public Contact",
+                    role="General Contact",
+                    phone=str(phone),
+                    source_url=source_url or website or "https://www.google.com/maps",
+                )
+            ]
+            if phone
+            else [],
+            social_profiles=[],
         )
 
 
