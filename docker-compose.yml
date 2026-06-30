@@ -85,6 +85,7 @@ services:
       WORKER_JOB_TIMEOUT_SECONDS: ${WORKER_JOB_TIMEOUT_SECONDS:-300}
       WORKER_HTTP_TIMEOUT_SECONDS: ${WORKER_HTTP_TIMEOUT_SECONDS:-45}
       WORKER_USER_AGENT: ${WORKER_USER_AGENT:-LeadGeneratorAppWorker/0.1}
+      OVERPASS_ENDPOINTS: ${OVERPASS_ENDPOINTS:-https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter,https://overpass.openstreetmap.ru/api/interpreter}
       CONTACT_COLLECTION_PROVIDER: ${CONTACT_COLLECTION_PROVIDER:-osm}
       CONTACT_COLLECTION_MAX_LIMIT: ${CONTACT_COLLECTION_MAX_LIMIT:-50}
       DATAFORSEO_ENABLED: ${DATAFORSEO_ENABLED:-false}

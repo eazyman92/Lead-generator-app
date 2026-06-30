@@ -572,6 +572,7 @@ def build_contact_collection_handler(settings: "Settings") -> ContactCollectionH
         OpenStreetMapBusinessProvider(
             settings.worker_user_agent,
             settings.worker_http_timeout_seconds,
+            settings.overpass_endpoints,
         )
     )
     provider = CompositeBusinessProvider(providers)

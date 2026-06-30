@@ -450,6 +450,11 @@ class OpenStreetMapBusinessProvider:
 
     name = "openstreetmap"
     endpoint = "https://overpass-api.de/api/interpreter"
+    default_endpoints = (
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.openstreetmap.ru/api/interpreter",
+    )
     category_tags = {
         "accountants": ("office", "accountant"),
         "accounting": ("office", "accountant"),
@@ -502,9 +507,15 @@ class OpenStreetMapBusinessProvider:
         ("united kingdom", "england", "london"): (51.28, -0.51, 51.70, 0.33),
     }
 
-    def __init__(self, user_agent: str, timeout_seconds: int = 10) -> None:
+    def __init__(
+        self,
+        user_agent: str,
+        timeout_seconds: int = 10,
+        endpoints: str | list[str] | tuple[str, ...] | None = None,
+    ) -> None:
         self.user_agent = user_agent
         self.timeout_seconds = timeout_seconds
+        self.endpoints = self._normalize_endpoints(endpoints)
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
         tag_key, tag_value = self._tag_for_payload(payload)
@@ -515,7 +526,8 @@ class OpenStreetMapBusinessProvider:
             extra={
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
-                "endpoint": self.endpoint,
+                "endpoint": self.endpoints[0],
+                "overpass_endpoints": self.endpoints,
                 "overpass_query": query,
                 "overpass_search_mode": search_mode,
                 "osm_tag_key": tag_key,
@@ -532,8 +544,44 @@ class OpenStreetMapBusinessProvider:
         payload: dict[str, Any],
         search_mode: str,
     ) -> list[RawBusiness]:
+        last_retryable_error: ProviderError | None = None
+        for endpoint in self.endpoints:
+            try:
+                return self._search_endpoint(endpoint, query, payload, search_mode)
+            except ProviderError as exc:
+                logger.warning(
+                    "provider_endpoint_failed",
+                    extra={
+                        "request_id": payload.get("request_id", "unknown"),
+                        "provider": self.name,
+                        "endpoint": endpoint,
+                        "error_code": exc.code,
+                        "retryable": exc.retryable,
+                        "failure_reason": exc.message,
+                        "fallback_available": endpoint != self.endpoints[-1],
+                    },
+                )
+                if not exc.retryable:
+                    raise
+                last_retryable_error = exc
+        if last_retryable_error is not None:
+            raise ProviderError(
+                last_retryable_error.code,
+                "OpenStreetMap Overpass endpoints are temporarily unavailable.",
+                True,
+                self.name,
+            ) from last_retryable_error
+        return []
+
+    def _search_endpoint(
+        self,
+        endpoint: str,
+        query: str,
+        payload: dict[str, Any],
+        search_mode: str,
+    ) -> list[RawBusiness]:
         request = Request(
-            self.endpoint,
+            endpoint,
             data=urlencode({"data": query}).encode("utf-8"),
             headers={
                 "User-Agent": self.user_agent,
@@ -546,6 +594,7 @@ class OpenStreetMapBusinessProvider:
                 status = getattr(response, "status", 200)
                 body = response.read().decode("utf-8")
         except HTTPError as exc:
+            error_body = self._read_http_error_body(exc)
             code = (
                 "HTTP_429"
                 if exc.code == 429
@@ -560,8 +609,10 @@ class OpenStreetMapBusinessProvider:
                     "provider": self.name,
                     "status": exc.code,
                     "error_code": code,
-                    "endpoint": self.endpoint,
+                    "endpoint": endpoint,
                     "overpass_search_mode": search_mode,
+                    "raw_body": truncate_for_log(error_body),
+                    "raw_body_length": len(error_body),
                 },
             )
             raise ProviderError(
@@ -591,7 +642,7 @@ class OpenStreetMapBusinessProvider:
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "endpoint": self.endpoint,
+                "endpoint": endpoint,
                 "overpass_query": query,
                 "overpass_search_mode": search_mode,
                 "raw_body": truncate_for_log(body),
@@ -625,7 +676,7 @@ class OpenStreetMapBusinessProvider:
                 "request_id": payload.get("request_id", "unknown"),
                 "provider": self.name,
                 "status": status,
-                "endpoint": self.endpoint,
+                "endpoint": endpoint,
                 "overpass_search_mode": search_mode,
                 "raw_response_size": len(body),
                 "parsed_objects": len(elements),
@@ -647,6 +698,25 @@ class OpenStreetMapBusinessProvider:
                 self.name,
             )
         return parsed
+
+    def _normalize_endpoints(
+        self,
+        endpoints: str | list[str] | tuple[str, ...] | None,
+    ) -> list[str]:
+        if endpoints is None:
+            return list(self.default_endpoints)
+        if isinstance(endpoints, str):
+            values = [endpoint.strip() for endpoint in endpoints.split(",")]
+        else:
+            values = [str(endpoint).strip() for endpoint in endpoints]
+        normalized = [endpoint for endpoint in values if endpoint]
+        return normalized or list(self.default_endpoints)
+
+    def _read_http_error_body(self, exc: HTTPError) -> str:
+        try:
+            return exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
 
     def _parse_results(
         self,

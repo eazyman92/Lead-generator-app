@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     worker_job_timeout_seconds: int = 300
     worker_http_timeout_seconds: int = 45
     worker_user_agent: str = "LeadGeneratorAppWorker/0.1"
+    overpass_endpoints: str = (
+        "https://overpass-api.de/api/interpreter,"
+        "https://overpass.kumi.systems/api/interpreter,"
+        "https://overpass.openstreetmap.ru/api/interpreter"
+    )
     contact_collection_provider: str = "osm"
     contact_collection_max_limit: int = 50
     dataforseo_enabled: bool = False

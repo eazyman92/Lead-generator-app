@@ -402,6 +402,69 @@ def test_openstreetmap_provider_parses_houston_restaurants_from_overpass() -> No
     assert businesses[0].city == "Houston"
 
 
+def test_openstreetmap_provider_tries_next_endpoint_after_retryable_failure() -> None:
+    provider = OpenStreetMapBusinessProvider(
+        "test-agent",
+        timeout_seconds=1,
+        endpoints=[
+            "https://overpass-primary.test/api/interpreter",
+            "https://overpass-secondary.test/api/interpreter",
+        ],
+    )
+    response_payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 123,
+                "lat": 29.7604,
+                "lon": -95.3698,
+                "tags": {
+                    "amenity": "restaurant",
+                    "name": "Fallback Endpoint Restaurant",
+                    "addr:city": "Houston",
+                    "addr:state": "Texas",
+                    "addr:country": "United States",
+                },
+            }
+        ]
+    }
+    attempted_urls = []
+
+    def fake_urlopen(request, timeout):
+        attempted_urls.append(request.full_url)
+        if len(attempted_urls) == 1:
+            raise HTTPError(
+                request.full_url,
+                504,
+                "Gateway Timeout",
+                {},
+                BytesIO(b"Overpass timeout"),
+            )
+        return FakeHttpResponse(response_payload)
+
+    with patch("collectors.providers.urlopen", side_effect=fake_urlopen):
+        businesses = asyncio.run(
+            provider.search(
+                {
+                    "request_id": "request-1",
+                    "query": "Restaurants",
+                    "category": "Restaurants",
+                    "location": "Houston, Texas, United States",
+                    "country": "United States",
+                    "state": "Texas",
+                    "city": "Houston",
+                    "limit": 20,
+                }
+            )
+        )
+
+    assert attempted_urls == [
+        "https://overpass-primary.test/api/interpreter",
+        "https://overpass-secondary.test/api/interpreter",
+    ]
+    assert businesses[0].name == "Fallback Endpoint Restaurant"
+
+
 def test_openstreetmap_provider_parses_ikeja_restaurants_from_overpass_fixture() -> None:
     provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
     response_payload = {
