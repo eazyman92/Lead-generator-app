@@ -1,12 +1,15 @@
 import asyncio
 import json
+from io import BytesIO
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs
 
 from collectors.extraction import contacts_from_public_html, social_profiles_from_public_html
 from collectors.models import RawBusiness
 from collectors.normalization import deterministic_business_identity, normalize_business
 from collectors.providers import (
+    CompositeBusinessProvider,
     DataForSEOGoogleMapsProvider,
     OpenStreetMapBusinessProvider,
     PayloadBusinessProvider,
@@ -221,6 +224,100 @@ def test_dataforseo_provider_parses_google_maps_response() -> None:
     assert businesses[0].phone == "+1 555 123 4567"
     assert businesses[0].source_type == "dataforseo_google_maps"
     assert businesses[0].contacts[0].phone == "+1 555 123 4567"
+
+
+def test_dataforseo_provider_reports_account_not_ready_from_http_error() -> None:
+    provider = DataForSEOGoogleMapsProvider(
+        "login",
+        "password",
+        timeout_seconds=1,
+        default_depth=100,
+    )
+    error = HTTPError(
+        DataForSEOGoogleMapsProvider.endpoint,
+        402,
+        "Payment Required",
+        {},
+        BytesIO(b'{"status_message":"Please add funds to your balance."}'),
+    )
+
+    with patch("collectors.providers.urlopen", side_effect=error):
+        try:
+            asyncio.run(
+                provider.search(
+                    {
+                        "request_id": "request-1",
+                        "query": "Restaurants",
+                        "category": "Restaurants",
+                        "country": "United States",
+                        "state": "Texas",
+                        "city": "Houston",
+                        "location": "Houston, Texas, United States",
+                        "limit": 100,
+                    }
+                )
+            )
+        except ProviderError as exc:
+            assert exc.code == "PROVIDER_ACCOUNT_NOT_READY"
+            assert exc.retryable is False
+        else:
+            raise AssertionError("account setup errors should raise ProviderError")
+
+
+def test_composite_provider_falls_back_after_dataforseo_account_failure() -> None:
+    class AccountBlockedProvider:
+        name = "dataforseo_google_maps"
+
+        async def search(self, payload):
+            raise ProviderError(
+                "PROVIDER_ACCOUNT_NOT_READY",
+                "Provider account requires verification or funds before fetching data.",
+                False,
+                self.name,
+            )
+
+    class OverpassFallbackProvider:
+        name = "openstreetmap"
+
+        async def search(self, payload):
+            return [
+                RawBusiness(
+                    name="Fallback Restaurant",
+                    industry="Restaurants",
+                    website="",
+                    phone="+1 555 123 4567",
+                    email=None,
+                    country="United States",
+                    state="Texas",
+                    city="Houston",
+                    address="123 Main",
+                    description=None,
+                    source_type="directory",
+                    source_url="https://www.openstreetmap.org/node/123",
+                    trust_tier="C",
+                    confidence_score=65,
+                )
+            ]
+
+    provider = CompositeBusinessProvider([AccountBlockedProvider(), OverpassFallbackProvider()])
+
+    businesses = asyncio.run(
+        provider.search(
+            {
+                "request_id": "request-1",
+                "query": "Restaurants",
+                "category": "Restaurants",
+                "country": "United States",
+                "state": "Texas",
+                "city": "Houston",
+                "location": "Houston, Texas, United States",
+                "limit": 20,
+            }
+        )
+    )
+
+    assert businesses[0].name == "Fallback Restaurant"
+    assert businesses[0].source_type == "directory"
 
 
 def test_openstreetmap_provider_parses_houston_restaurants_from_overpass() -> None:

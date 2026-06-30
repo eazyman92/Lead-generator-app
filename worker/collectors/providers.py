@@ -188,13 +188,8 @@ class DataForSEOGoogleMapsProvider:
                 status = getattr(response, "status", 200)
                 body = response.read().decode("utf-8")
         except HTTPError as exc:
-            code = (
-                "HTTP_429"
-                if exc.code == 429
-                else "HTTP_5XX"
-                if exc.code >= 500
-                else "PROVIDER_FAILURE"
-            )
+            error_body = self._read_http_error_body(exc)
+            code, message, retryable = self._classify_http_error(exc.code, error_body)
             logger.warning(
                 "provider_response_failed",
                 extra={
@@ -203,12 +198,14 @@ class DataForSEOGoogleMapsProvider:
                     "status": exc.code,
                     "error_code": code,
                     "endpoint": self.endpoint,
+                    "raw_body": truncate_for_log(error_body),
+                    "raw_body_length": len(error_body),
                 },
             )
             raise ProviderError(
                 code,
-                "Provider request failed.",
-                exc.code == 429 or exc.code >= 500,
+                message,
+                retryable,
                 self.name,
             ) from exc
         except TimeoutError as exc:
@@ -293,10 +290,11 @@ class DataForSEOGoogleMapsProvider:
             if not isinstance(task, dict):
                 continue
             if int(task.get("status_code") or 20000) >= 40000:
+                code, message, retryable = self._classify_task_error(task)
                 raise ProviderError(
-                    "PROVIDER_FAILURE",
-                    str(task.get("status_message") or "Provider task failed."),
-                    True,
+                    code,
+                    message,
+                    retryable,
                     self.name,
                 )
             for result in task.get("result") or []:
@@ -331,6 +329,66 @@ class DataForSEOGoogleMapsProvider:
                 },
             )
         return businesses
+
+    def _read_http_error_body(self, exc: HTTPError) -> str:
+        try:
+            return exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    def _classify_http_error(self, status: int, body: str) -> tuple[str, str, bool]:
+        body_text = body.lower()
+        if status in {401, 403}:
+            return (
+                "PROVIDER_AUTH_FAILED",
+                "Provider credentials were rejected.",
+                False,
+            )
+        if status == 402 or self._looks_like_billing_or_verification_error(body_text):
+            return (
+                "PROVIDER_ACCOUNT_NOT_READY",
+                "Provider account requires verification or funds before fetching data.",
+                False,
+            )
+        if status == 429:
+            return ("HTTP_429", "Provider rate limit was reached.", True)
+        if status >= 500:
+            return ("HTTP_5XX", "Provider service returned a server error.", True)
+        return ("PROVIDER_FAILURE", "Provider request failed.", False)
+
+    def _classify_task_error(self, task: dict[str, Any]) -> tuple[str, str, bool]:
+        status_code = int(task.get("status_code") or 0)
+        status_message = str(task.get("status_message") or "Provider task failed.")
+        message_text = status_message.lower()
+        if "auth" in message_text or "login" in message_text or "password" in message_text:
+            return ("PROVIDER_AUTH_FAILED", "Provider credentials were rejected.", False)
+        if self._looks_like_billing_or_verification_error(message_text):
+            return (
+                "PROVIDER_ACCOUNT_NOT_READY",
+                "Provider account requires verification or funds before fetching data.",
+                False,
+            )
+        if status_code in {40200, 40201, 40202}:
+            return (
+                "PROVIDER_ACCOUNT_NOT_READY",
+                "Provider account requires verification or funds before fetching data.",
+                False,
+            )
+        return ("PROVIDER_FAILURE", status_message, True)
+
+    def _looks_like_billing_or_verification_error(self, text: str) -> bool:
+        indicators = (
+            "balance",
+            "billing",
+            "fund",
+            "payment",
+            "verify",
+            "verification",
+            "account setup",
+            "not enough money",
+            "insufficient",
+        )
+        return any(indicator in text for indicator in indicators)
 
     def _from_dataforseo_item(self, item: dict[str, Any], payload: dict[str, Any]) -> RawBusiness:
         address_info = (
@@ -877,6 +935,7 @@ class CompositeBusinessProvider:
         self.providers = providers
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
+        last_error: ProviderError | None = None
         for provider in self.providers:
             logger.info(
                 "provider_selected",
@@ -885,7 +944,22 @@ class CompositeBusinessProvider:
                     "provider": provider.name,
                 },
             )
-            businesses = await provider.search(payload)
+            try:
+                businesses = await provider.search(payload)
+            except ProviderError as exc:
+                last_error = exc
+                logger.warning(
+                    "provider_failed",
+                    extra={
+                        "request_id": payload.get("request_id", "unknown"),
+                        "provider": provider.name,
+                        "error_code": exc.code,
+                        "retryable": exc.retryable,
+                        "failure_reason": exc.message,
+                        "fallback_available": provider is not self.providers[-1],
+                    },
+                )
+                continue
             logger.info(
                 "provider_result",
                 extra={
@@ -896,4 +970,6 @@ class CompositeBusinessProvider:
             )
             if businesses:
                 return businesses
+        if last_error is not None:
+            raise last_error
         return []
