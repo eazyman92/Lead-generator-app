@@ -465,6 +465,78 @@ def test_openstreetmap_provider_tries_next_endpoint_after_retryable_failure() ->
     assert businesses[0].name == "Fallback Endpoint Restaurant"
 
 
+def test_openstreetmap_provider_maps_healthcare_to_multiple_osm_tags() -> None:
+    provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
+    response_payload = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 111,
+                "tags": {
+                    "amenity": "clinic",
+                    "name": "London Health Clinic",
+                    "addr:city": "London",
+                    "addr:country": "United Kingdom",
+                },
+            }
+        ]
+    }
+    captured_request = {}
+
+    def fake_urlopen(request, timeout):
+        captured_request["data"] = request.data.decode("utf-8")
+        return FakeHttpResponse(response_payload)
+
+    with patch("collectors.providers.urlopen", side_effect=fake_urlopen):
+        businesses = asyncio.run(
+            provider.search(
+                {
+                    "request_id": "request-healthcare",
+                    "query": "Healthcare",
+                    "category": "Healthcare",
+                    "location": "London, England, United Kingdom",
+                    "country": "United Kingdom",
+                    "state": "England",
+                    "city": "London",
+                    "limit": 20,
+                }
+            )
+        )
+
+    overpass_query = parse_qs(captured_request["data"])["data"][0]
+    assert '["amenity"="hospital"]' in overpass_query
+    assert '["amenity"="clinic"]' in overpass_query
+    assert '["amenity"="doctors"]' in overpass_query
+    assert '["amenity"="dentist"]' in overpass_query
+    assert '["amenity"="pharmacy"]' in overpass_query
+    assert businesses[0].name == "London Health Clinic"
+
+
+def test_openstreetmap_provider_covers_frontend_industry_options() -> None:
+    provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
+    frontend_industries = [
+        "Restaurants",
+        "Healthcare",
+        "Clinics",
+        "Real Estate",
+        "Construction",
+        "Retail",
+        "Hospitality",
+        "Education",
+        "Logistics",
+        "Manufacturing",
+        "Financial Services",
+        "Legal Services",
+        "Marketing Agencies",
+        "Automotive",
+        "Beauty and Wellness",
+    ]
+
+    for industry in frontend_industries:
+        tags = provider._tags_for_payload({"query": industry, "category": industry})
+        assert tags, industry
+
+
 def test_openstreetmap_provider_parses_ikeja_restaurants_from_overpass_fixture() -> None:
     provider = OpenStreetMapBusinessProvider("test-agent", timeout_seconds=1)
     response_payload = {

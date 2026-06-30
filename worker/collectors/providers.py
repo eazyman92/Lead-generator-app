@@ -455,40 +455,120 @@ class OpenStreetMapBusinessProvider:
         "https://overpass.kumi.systems/api/interpreter",
         "https://overpass.openstreetmap.ru/api/interpreter",
     )
-    category_tags = {
-        "accountants": ("office", "accountant"),
-        "accounting": ("office", "accountant"),
-        "atm": ("amenity", "atm"),
-        "atms": ("amenity", "atm"),
-        "bank": ("amenity", "bank"),
-        "banks": ("amenity", "bank"),
-        "bar": ("amenity", "bar"),
-        "bars": ("amenity", "bar"),
-        "cafe": ("amenity", "cafe"),
-        "cafes": ("amenity", "cafe"),
-        "clinic": ("amenity", "clinic"),
-        "clinics": ("amenity", "clinic"),
-        "dentist": ("amenity", "dentist"),
-        "dentists": ("amenity", "dentist"),
-        "doctors": ("amenity", "doctors"),
-        "gym": ("leisure", "fitness_centre"),
-        "gyms": ("leisure", "fitness_centre"),
-        "hospital": ("amenity", "hospital"),
-        "hospitals": ("amenity", "hospital"),
-        "hotel": ("tourism", "hotel"),
-        "hotels": ("tourism", "hotel"),
-        "law firm": ("office", "lawyer"),
-        "law firms": ("office", "lawyer"),
-        "lawyer": ("office", "lawyer"),
-        "lawyers": ("office", "lawyer"),
-        "pharmacy": ("amenity", "pharmacy"),
-        "pharmacies": ("amenity", "pharmacy"),
-        "restaurant": ("amenity", "restaurant"),
-        "restaurants": ("amenity", "restaurant"),
-        "school": ("amenity", "school"),
-        "schools": ("amenity", "school"),
-        "supermarket": ("shop", "supermarket"),
-        "supermarkets": ("shop", "supermarket"),
+    category_tags: dict[str, tuple[tuple[str, str], ...]] = {
+        "automotive": (
+            ("shop", "car"),
+            ("shop", "car_repair"),
+            ("shop", "tyres"),
+            ("amenity", "car_wash"),
+            ("amenity", "fuel"),
+        ),
+        "beauty and wellness": (
+            ("shop", "beauty"),
+            ("shop", "hairdresser"),
+            ("shop", "massage"),
+            ("leisure", "fitness_centre"),
+            ("amenity", "spa"),
+        ),
+        "construction": (
+            ("shop", "doityourself"),
+            ("shop", "hardware"),
+            ("shop", "building_materials"),
+            ("office", "architect"),
+            ("craft", "builder"),
+        ),
+        "education": (
+            ("amenity", "school"),
+            ("amenity", "college"),
+            ("amenity", "university"),
+            ("amenity", "kindergarten"),
+            ("amenity", "language_school"),
+        ),
+        "financial services": (
+            ("amenity", "bank"),
+            ("amenity", "atm"),
+            ("office", "accountant"),
+            ("office", "financial"),
+            ("shop", "money_lender"),
+        ),
+        "healthcare": (
+            ("amenity", "hospital"),
+            ("amenity", "clinic"),
+            ("amenity", "doctors"),
+            ("amenity", "dentist"),
+            ("amenity", "pharmacy"),
+        ),
+        "hospitality": (
+            ("tourism", "hotel"),
+            ("tourism", "guest_house"),
+            ("tourism", "hostel"),
+            ("tourism", "motel"),
+            ("amenity", "restaurant"),
+        ),
+        "legal services": (
+            ("office", "lawyer"),
+            ("office", "notary"),
+        ),
+        "logistics": (
+            ("amenity", "post_office"),
+            ("office", "logistics"),
+            ("shop", "storage_rental"),
+            ("industrial", "warehouse"),
+            ("amenity", "courier"),
+        ),
+        "manufacturing": (
+            ("landuse", "industrial"),
+            ("industrial", "factory"),
+            ("man_made", "works"),
+        ),
+        "marketing agencies": (
+            ("office", "advertising_agency"),
+            ("office", "marketing"),
+            ("office", "company"),
+        ),
+        "real estate": (
+            ("office", "estate_agent"),
+        ),
+        "retail": (
+            ("shop", "supermarket"),
+            ("shop", "convenience"),
+            ("shop", "department_store"),
+            ("shop", "clothes"),
+            ("shop", "mall"),
+        ),
+        "accountants": (("office", "accountant"),),
+        "accounting": (("office", "accountant"),),
+        "atm": (("amenity", "atm"),),
+        "atms": (("amenity", "atm"),),
+        "bank": (("amenity", "bank"),),
+        "banks": (("amenity", "bank"),),
+        "bar": (("amenity", "bar"),),
+        "bars": (("amenity", "bar"),),
+        "cafe": (("amenity", "cafe"),),
+        "cafes": (("amenity", "cafe"),),
+        "clinic": (("amenity", "clinic"),),
+        "clinics": (("amenity", "clinic"),),
+        "dentist": (("amenity", "dentist"),),
+        "dentists": (("amenity", "dentist"),),
+        "doctors": (("amenity", "doctors"),),
+        "gym": (("leisure", "fitness_centre"),),
+        "gyms": (("leisure", "fitness_centre"),),
+        "hospital": (("amenity", "hospital"),),
+        "hospitals": (("amenity", "hospital"),),
+        "hotel": (("tourism", "hotel"),),
+        "hotels": (("tourism", "hotel"),),
+        "law firm": (("office", "lawyer"),),
+        "law firms": (("office", "lawyer"),),
+        "lawyer": (("office", "lawyer"),),
+        "lawyers": (("office", "lawyer"),),
+        "pharmacy": (("amenity", "pharmacy"),),
+        "pharmacies": (("amenity", "pharmacy"),),
+        "restaurant": (("amenity", "restaurant"),),
+        "restaurants": (("amenity", "restaurant"),),
+        "school": (("amenity", "school"),),
+        "schools": (("amenity", "school"),),
+        "supermarket": (("shop", "supermarket"),),
+        "supermarkets": (("shop", "supermarket"),),
     }
     city_bounding_boxes = {
         ("nigeria", "lagos", "ikeja"): (6.55, 3.28, 6.66, 3.43),
@@ -518,8 +598,8 @@ class OpenStreetMapBusinessProvider:
         self.endpoints = self._normalize_endpoints(endpoints)
 
     async def search(self, payload: dict[str, Any]) -> list[RawBusiness]:
-        tag_key, tag_value = self._tag_for_payload(payload)
-        query, search_mode = self._build_overpass_query(payload, tag_key, tag_value)
+        tags = self._tags_for_payload(payload)
+        query, search_mode = self._build_overpass_query(payload, tags)
         limit = int(payload.get("limit", 10))
         logger.info(
             "provider_request",
@@ -530,8 +610,7 @@ class OpenStreetMapBusinessProvider:
                 "overpass_endpoints": self.endpoints,
                 "overpass_query": query,
                 "overpass_search_mode": search_mode,
-                "osm_tag_key": tag_key,
-                "osm_tag_value": tag_value,
+                "osm_tags": [{"key": tag_key, "value": tag_value} for tag_key, tag_value in tags],
                 "limit": max(1, min(limit, 50)),
                 "http_timeout_seconds": self.timeout_seconds,
             },
@@ -846,7 +925,7 @@ class OpenStreetMapBusinessProvider:
             social_profiles=[],
         )
 
-    def _tag_for_payload(self, payload: dict[str, Any]) -> tuple[str, str]:
+    def _tags_for_payload(self, payload: dict[str, Any]) -> tuple[tuple[str, str], ...]:
         candidates = [payload.get("category"), payload.get("query")]
         for candidate in candidates:
             key = self._category_key(candidate)
@@ -862,23 +941,20 @@ class OpenStreetMapBusinessProvider:
     def _build_overpass_query(
         self,
         payload: dict[str, Any],
-        tag_key: str,
-        tag_value: str,
+        tags: tuple[tuple[str, str], ...],
     ) -> tuple[str, str]:
         limit = max(1, min(int(payload.get("limit", 10)), 50))
-        selector = self._overpass_tag_selector(tag_key, tag_value)
         timeout = self._overpass_timeout_seconds()
         bbox = self._bbox_for_payload(payload)
         if bbox:
             south, west, north, east = bbox
+            elements = self._element_queries_for_bbox(tags, south, west, north, east)
             return (
                 "\n".join(
                     [
                         f"[out:json][timeout:{timeout}];",
                         "(",
-                        f"  node{selector}({south},{west},{north},{east});",
-                        f"  way{selector}({south},{west},{north},{east});",
-                        f"  relation{selector}({south},{west},{north},{east});",
+                        *elements,
                         ");",
                         f"out center {limit};",
                     ]
@@ -887,21 +963,42 @@ class OpenStreetMapBusinessProvider:
             )
 
         area_filters = self._area_filters(payload)
+        elements = self._element_queries_for_area(tags)
         return (
             "\n".join(
                 [
                     f"[out:json][timeout:{timeout}];",
                     *area_filters,
                     "(",
-                    f"  node{selector}(area.searchArea);",
-                    f"  way{selector}(area.searchArea);",
-                    f"  relation{selector}(area.searchArea);",
+                    *elements,
                     ");",
                     f"out center {limit};",
                 ]
             ),
             "area",
         )
+
+    def _element_queries_for_bbox(
+        self,
+        tags: tuple[tuple[str, str], ...],
+        south: float,
+        west: float,
+        north: float,
+        east: float,
+    ) -> list[str]:
+        bounds = f"({south},{west},{north},{east})"
+        return [
+            f"  {element_type}{self._overpass_tag_selector(tag_key, tag_value)}{bounds};"
+            for tag_key, tag_value in tags
+            for element_type in ("node", "way", "relation")
+        ]
+
+    def _element_queries_for_area(self, tags: tuple[tuple[str, str], ...]) -> list[str]:
+        return [
+            f"  {element_type}{self._overpass_tag_selector(tag_key, tag_value)}(area.searchArea);"
+            for tag_key, tag_value in tags
+            for element_type in ("node", "way", "relation")
+        ]
 
     def _overpass_timeout_seconds(self) -> int:
         if self.timeout_seconds <= 5:
